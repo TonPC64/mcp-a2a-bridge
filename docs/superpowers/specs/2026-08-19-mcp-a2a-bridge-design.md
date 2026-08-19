@@ -197,7 +197,7 @@ Confirmed by introspecting the installed packages, not from documentation:
 |---|---|
 | `a2a-sdk` | 1.1.2 (pin `>=1.1,<2`) |
 | `mcp` | 2.0.0 |
-| Python | >= 3.10 |
+| Python | >= 3.11 (`asyncio.timeout()` is 3.11+) |
 | Agent card path | `/.well-known/agent-card.json` |
 | Client construction | `create_client(url_or_card, client_config=..., interceptors=...)` |
 | Send | `Client.send_message(SendMessageRequest) -> AsyncIterator[StreamResponse]` |
@@ -218,7 +218,7 @@ Two widely-documented patterns are wrong for these versions and must not be used
 ```toml
 [project]
 name = "mcp-a2a-bridge"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["mcp>=2.0.0,<3", "a2a-sdk>=1.1,<2"]
 
 [project.scripts]

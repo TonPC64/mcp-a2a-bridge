@@ -121,3 +121,28 @@ async def test_add_without_persist_is_in_memory_only(tmp_path):
 
     assert reg.names() == ["planner"]
     assert not path.exists()
+
+
+async def test_add_does_not_register_in_memory_when_persist_fails(tmp_path):
+    # Create a regular file where the parent directory should be
+    afile = tmp_path / "afile"
+    afile.touch()
+
+    # Point the path nested under the file, so mkdir will fail
+    path = afile / "agents.json"
+
+    async def fetch(entry):
+        return make_card(entry.name)
+
+    reg = AgentRegistry(Registry(path=path, agents={}), fetch_card=fetch)
+
+    # Verify that save_agent would actually fail with this path
+    with pytest.raises(OSError):
+        from mcp_a2a_bridge.config import save_agent
+        save_agent(path, AgentEntry(name="test", url="http://test", headers={}))
+
+    # Now test that add() raises AND doesn't mutate in-memory state
+    with pytest.raises(OSError):
+        await reg.add("planner", "http://localhost:9001", None, persist=True)
+
+    assert reg.names() == []

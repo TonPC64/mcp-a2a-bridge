@@ -117,11 +117,11 @@ class AgentRegistry:
         entry = AgentEntry(name=name, url=url.rstrip("/"), headers=headers or {})
         card = await self._fetch_one(entry)
 
-        self._registry.agents[name] = entry
-        self._cards[name] = card
-
         if persist and self._registry.path is not None:
             save_agent(self._registry.path, entry)
+
+        self._registry.agents[name] = entry
+        self._cards[name] = card
 
         return ResolvedAgent(entry=entry, card=card, error=None)
 

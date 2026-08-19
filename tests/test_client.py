@@ -1,10 +1,18 @@
+import asyncio
+
 from a2a.types import (
     AgentCapabilities,
     AgentCard,
     AgentInterface,
     AgentSkill,
+    Message,
     Part,
+    Role,
+    StreamResponse,
+    Task,
     TaskState,
+    TaskStatus,
+    TaskStatusUpdateEvent,
 )
 from google.protobuf.json_format import ParseDict
 from google.protobuf.struct_pb2 import Value
@@ -14,6 +22,7 @@ from mcp_a2a_bridge.client import (
     BLOCKING_STATES,
     TERMINAL_STATES,
     card_summary,
+    consume_stream,
     is_done,
     state_name,
     summarize_part,
@@ -133,3 +142,105 @@ def test_result_to_dict_includes_ids_when_present():
         "task_id": "t1",
         "context_id": "c1",
     }
+
+
+# Tests for consume_stream
+
+
+async def as_stream(items):
+    for item in items:
+        yield item
+
+
+def task_chunk(task_id, state):
+    return StreamResponse(
+        task=Task(id=task_id, context_id="c1", status=TaskStatus(state=state))
+    )
+
+
+def status_chunk(task_id, state, text=None):
+    message = None
+    if text is not None:
+        message = Message(role=Role.ROLE_AGENT, parts=[Part(text=text)])
+    return StreamResponse(
+        status_update=TaskStatusUpdateEvent(
+            task_id=task_id,
+            context_id="c1",
+            status=TaskStatus(state=state, message=message),
+        )
+    )
+
+
+async def test_consume_stream_accumulates_text_until_completed():
+    chunks = as_stream([
+        task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),
+        status_chunk("t1", TaskState.TASK_STATE_WORKING, "thinking"),
+        status_chunk("t1", TaskState.TASK_STATE_COMPLETED, "done"),
+    ])
+    result = await consume_stream(chunks, task_id=None, context_id=None)
+
+    assert result.state == "completed"
+    assert result.text == "thinking\ndone"
+    assert result.task_id == "t1"
+    assert result.context_id == "c1"
+    assert result.done is True
+
+
+async def test_consume_stream_stops_at_input_required():
+    chunks = as_stream([
+        task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),
+        status_chunk("t1", TaskState.TASK_STATE_INPUT_REQUIRED, "which city?"),
+    ])
+    result = await consume_stream(chunks, task_id=None, context_id=None)
+
+    assert result.state == "input_required"
+    assert result.text == "which city?"
+    assert result.task_id == "t1"
+    assert result.done is True
+
+
+async def test_consume_stream_reports_failed_as_data_not_exception():
+    chunks = as_stream([
+        task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),
+        status_chunk("t1", TaskState.TASK_STATE_FAILED, "upstream exploded"),
+    ])
+    result = await consume_stream(chunks, task_id=None, context_id=None)
+
+    assert result.state == "failed"
+    assert "upstream exploded" in result.text
+    assert result.done is True
+
+
+async def test_consume_stream_handles_direct_message_reply():
+    chunks = as_stream([
+        StreamResponse(message=Message(role=Role.ROLE_AGENT, parts=[Part(text="hi")]))
+    ])
+    result = await consume_stream(chunks, task_id=None, context_id=None)
+
+    assert result.text == "hi"
+    assert result.state == "completed"
+    assert result.done is True
+
+
+async def test_consume_stream_timeout_returns_working_with_task_id():
+    async def slow():
+        yield task_chunk("t1", TaskState.TASK_STATE_SUBMITTED)
+        await asyncio.sleep(5)
+        yield status_chunk("t1", TaskState.TASK_STATE_COMPLETED, "never seen")
+
+    result = await consume_stream(slow(), task_id=None, context_id=None, timeout_s=0.1)
+
+    assert result.state == "working"
+    assert result.task_id == "t1"
+    assert result.done is False
+    assert "never seen" not in result.text
+
+
+async def test_consume_stream_preserves_incoming_task_id_when_stream_is_silent():
+    chunks = as_stream([
+        StreamResponse(message=Message(role=Role.ROLE_AGENT, parts=[Part(text="ok")]))
+    ])
+    result = await consume_stream(chunks, task_id="given", context_id="ctx")
+
+    assert result.task_id == "given"
+    assert result.context_id == "ctx"

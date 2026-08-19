@@ -62,6 +62,10 @@ def test_summarize_data_part_inlines_json():
     assert summarize_part(part) == '{"key": "value"}'
 
 
+def test_summarize_part_returns_empty_string_for_unset_content():
+    assert summarize_part(Part()) == ""
+
+
 def test_card_summary_flattens_useful_fields():
     card = AgentCard(
         name="Planner",
@@ -108,6 +112,7 @@ def test_card_summary_handles_card_with_no_interfaces():
     summary = card_summary(AgentCard(name="Bare", description="d", version="1"))
     assert summary["url"] is None
     assert summary["skills"] == []
+    assert summary["streaming"] is False
 
 
 def test_result_to_dict_omits_empty_ids():

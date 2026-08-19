@@ -58,6 +58,8 @@ def echo_agent_url():
 
     server.should_exit = True
     thread.join(timeout=10)
+    if thread.is_alive():
+        pytest.fail("echo agent thread did not shut down")
 
 
 @pytest.fixture
@@ -136,22 +138,21 @@ async def test_input_required_can_be_continued_with_same_task_id(bridge):
     assert second["text"] == "echo: Bangkok"
 
 
-async def test_unreachable_agent_does_not_break_other_agents(bridge):
-    """Resolution (A): pre-configure dead agent with unused port, no private access."""
-    server, registry, url = bridge
-
-    # Add live agent
-    await server.call_tool("a2a_add_agent", {"name": "echo", "url": url})
-    
-    # Pre-configure dead agent with an unused port
+async def test_unreachable_agent_does_not_break_other_agents(echo_agent_url, tmp_path):
+    """Build registry with both live and dead agents up front, no private access."""
     dead_port = _free_port()
-    dead_entry = AgentEntry(
-        name="dead", url=f"http://127.0.0.1:{dead_port}", headers={}
+    registry = AgentRegistry(
+        Registry(
+            path=tmp_path / "agents.json",
+            agents={
+                "echo": AgentEntry(name="echo", url=echo_agent_url, headers={}),
+                "dead": AgentEntry(
+                    name="dead", url=f"http://127.0.0.1:{dead_port}", headers={}
+                ),
+            },
+        )
     )
-    registry._registry = Registry(
-        path=registry._registry.path,
-        agents={"echo": registry._registry.agents["echo"], "dead": dead_entry}
-    )
+    server = build_server(registry)
 
     listed = payload(await server.call_tool("a2a_list_agents", {}))
     agents = {a["name"]: a for a in listed["agents"]}

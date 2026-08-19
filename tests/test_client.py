@@ -171,7 +171,8 @@ def status_chunk(task_id, state, text=None):
     )
 
 
-async def test_consume_stream_accumulates_text_until_completed():
+async def test_consume_stream_final_message_replaces_progress_notes():
+    """The terminal message is the answer; working notes are only progress."""
     chunks = as_stream([
         task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),
         status_chunk("t1", TaskState.TASK_STATE_WORKING, "thinking"),
@@ -180,10 +181,22 @@ async def test_consume_stream_accumulates_text_until_completed():
     result = await consume_stream(chunks, task_id=None, context_id=None)
 
     assert result.state == "completed"
-    assert result.text == "thinking\ndone"
+    assert result.text == "done"
     assert result.task_id == "t1"
     assert result.context_id == "c1"
     assert result.done is True
+
+
+async def test_consume_stream_keeps_progress_when_final_message_is_empty():
+    chunks = as_stream([
+        task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),
+        status_chunk("t1", TaskState.TASK_STATE_WORKING, "partial answer"),
+        status_chunk("t1", TaskState.TASK_STATE_COMPLETED),
+    ])
+    result = await consume_stream(chunks, task_id=None, context_id=None)
+
+    assert result.state == "completed"
+    assert result.text == "partial answer"
 
 
 async def test_consume_stream_stops_at_input_required():

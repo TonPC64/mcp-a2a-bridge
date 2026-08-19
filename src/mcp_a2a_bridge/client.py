@@ -146,12 +146,29 @@ async def consume_stream(
 ) -> A2AResult:
     """Accumulate a StreamResponse iterator into one flat result.
 
+    A terminal status message is the agent's final answer, so it replaces the
+    intermediate progress notes rather than being appended to them.
+
     Returns rather than raises on timeout: a still-running task is a normal
     outcome the caller can poll on.
     """
     pieces: list[str] = []
+    final_text = ""
     state: int | None = None
     timed_out = False
+
+    def record(status) -> None:
+        """Route a status message: a terminal one is the answer, others are progress."""
+        nonlocal final_text
+        if not status.HasField("message"):
+            return
+        text = _message_text(status.message)
+        if not text:
+            return
+        if is_done(status.state):
+            final_text = text
+        else:
+            pieces.append(text)
 
     try:
         async with asyncio.timeout(timeout_s):
@@ -162,20 +179,14 @@ async def consume_stream(
                     task_id = chunk.task.id or task_id
                     context_id = chunk.task.context_id or context_id
                     state = chunk.task.status.state
-                    if chunk.task.status.HasField("message"):
-                        text = _message_text(chunk.task.status.message)
-                        if text:
-                            pieces.append(text)
+                    record(chunk.task.status)
 
                 elif which == "status_update":
                     update = chunk.status_update
                     task_id = update.task_id or task_id
                     context_id = update.context_id or context_id
                     state = update.status.state
-                    if update.status.HasField("message"):
-                        text = _message_text(update.status.message)
-                        if text:
-                            pieces.append(text)
+                    record(update.status)
 
                 elif which == "artifact_update":
                     update = chunk.artifact_update
@@ -211,7 +222,7 @@ async def consume_stream(
 
     return A2AResult(
         state=state_name(state),
-        text="\n".join(pieces),
+        text=final_text or "\n".join(pieces),
         task_id=task_id,
         context_id=context_id,
         done=is_done(state),

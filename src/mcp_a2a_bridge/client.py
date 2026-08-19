@@ -199,6 +199,10 @@ async def consume_stream(
                     break
     except TimeoutError:
         timed_out = True
+    finally:
+        aclose = getattr(chunks, "aclose", None)
+        if aclose is not None:
+            await aclose()
 
     if timed_out:
         state = TaskState.TASK_STATE_WORKING

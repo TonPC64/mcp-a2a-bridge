@@ -236,6 +236,25 @@ async def test_consume_stream_timeout_returns_working_with_task_id():
     assert "never seen" not in result.text
 
 
+async def test_consume_stream_closes_iterator_on_timeout():
+    closed = False
+
+    async def slow():
+        nonlocal closed
+        try:
+            yield task_chunk("t1", TaskState.TASK_STATE_SUBMITTED)
+            await asyncio.sleep(5)
+            yield status_chunk("t1", TaskState.TASK_STATE_COMPLETED, "never seen")
+        finally:
+            closed = True
+
+    result = await consume_stream(slow(), task_id=None, context_id=None, timeout_s=0.1)
+
+    assert result.state == "working"
+    assert result.task_id == "t1"
+    assert closed is True
+
+
 async def test_consume_stream_preserves_incoming_task_id_when_stream_is_silent():
     chunks = as_stream([
         StreamResponse(message=Message(role=Role.ROLE_AGENT, parts=[Part(text="ok")]))

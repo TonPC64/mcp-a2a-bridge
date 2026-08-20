@@ -1,4 +1,4 @@
-"""Expose Codex CLI as a local A2A co-developer."""
+"""Claude Code reviewer exposed as an A2A agent on port 9010."""
 
 from __future__ import annotations
 
@@ -18,21 +18,24 @@ from a2a.server.routes import (
     create_agent_card_routes,
     create_jsonrpc_routes,
 )
-from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.server.tasks import TaskUpdater
+from mcp_a2a_bridge.ttl_task_store import TTLTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from fastapi import FastAPI
 
+PORT = 9010
 
-def build_card(port: int) -> AgentCard:
+
+def build_card() -> AgentCard:
     return AgentCard(
-        name="codex-co-developer",
-        description="Codex CLI acting as a local coding co-developer",
+        name="claude-reviewer",
+        description="Claude Code acting as a code reviewer",
         version="1.0.0",
         supported_interfaces=[
             AgentInterface(
                 protocol_binding="JSONRPC",
                 protocol_version="1.0",
-                url=f"http://127.0.0.1:{port}/",
+                url=f"http://127.0.0.1:{PORT}/",
             )
         ],
         default_input_modes=["text/plain"],
@@ -40,17 +43,17 @@ def build_card(port: int) -> AgentCard:
         capabilities=AgentCapabilities(streaming=True),
         skills=[
             AgentSkill(
-                id="coding",
-                name="Coding",
-                description="Analyze, modify, and test code in the current repository",
-                tags=["code", "development", "testing"],
-                examples=["fix this bug", "add a unit test"],
+                id="code-review",
+                name="Code Review",
+                description="Review code, diffs, or pull requests for correctness, style, and bugs",
+                tags=["review", "code", "diff", "pr"],
+                examples=["review this diff", "check my code for bugs"],
             )
         ],
     )
 
 
-class CodexExecutor(AgentExecutor):
+class ClaudeReviewerExecutor(AgentExecutor):
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task = context.current_task
         if task is None:
@@ -59,24 +62,27 @@ class CodexExecutor(AgentExecutor):
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.start_work()
+
         prompt = get_message_text(context.message)
-        result = await asyncio.get_running_loop().run_in_executor(
+        # ponytail: subprocess claude -p — no SDK wrapper needed for a local CLI call
+        result = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: subprocess.run(
                 [
-                    shutil.which("codex") or "codex",
-                    "exec",
-                    "--sandbox",
-                    "workspace-write",
-                    "--color",
-                    "never",
-                    "-C",
+                    shutil.which("claude") or "claude",
+                    "-p",
+                    f"You are a code reviewer. {prompt}",
+                    "--add-dir",
                     str(Path(__file__).resolve().parent.parent),
-                    prompt,
+                    "--allowedTools",
+                    "Read,Bash",
+                    "--dangerously-skip-permissions",
+                    "--max-turns",
+                    "5",
                 ],
                 capture_output=True,
                 text=True,
-                timeout=600,
+                timeout=300,
             ),
         )
         reply = result.stdout.strip() if result.returncode == 0 else f"error: {result.stderr.strip()}"
@@ -88,8 +94,8 @@ class CodexExecutor(AgentExecutor):
 
 def build_app(card: AgentCard) -> FastAPI:
     handler = DefaultRequestHandler(
-        agent_executor=CodexExecutor(),
-        task_store=InMemoryTaskStore(),
+        agent_executor=ClaudeReviewerExecutor(),
+        task_store=TTLTaskStore(),
         agent_card=card,
     )
     app = FastAPI()
@@ -102,5 +108,5 @@ def build_app(card: AgentCard) -> FastAPI:
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 9011
-    uvicorn.run(build_app(build_card(port)), host="127.0.0.1", port=port, log_level="info")
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT
+    uvicorn.run(build_app(build_card()), host="127.0.0.1", port=port, log_level="info")

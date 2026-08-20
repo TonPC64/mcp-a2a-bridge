@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,7 @@ from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, 
 from fastapi import FastAPI
 
 PORT = 9010
+CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 
 
 def build_card() -> AgentCard:
@@ -69,16 +71,23 @@ class ClaudeReviewerExecutor(AgentExecutor):
             None,
             lambda: subprocess.run(
                 [
-                    shutil.which("claude") or "claude",
-                    "-p",
-                    f"You are a code reviewer. {prompt}",
-                    "--add-dir",
-                    str(Path(__file__).resolve().parent.parent),
-                    "--allowedTools",
-                    "Read,Bash",
-                    "--dangerously-skip-permissions",
-                    "--max-turns",
-                    "5",
+                    "/bin/zsh",
+                    "-lic",
+                    shlex.join(
+                        [
+                            "exec",
+                            CLAUDE_BIN,
+                            "-p",
+                            f"You are a code reviewer. {prompt}",
+                            "--add-dir",
+                            str(Path(__file__).resolve().parent.parent),
+                            "--allowedTools",
+                            "Read,Bash",
+                            "--dangerously-skip-permissions",
+                            "--max-turns",
+                            "5",
+                        ]
+                    ),
                 ],
                 capture_output=True,
                 text=True,

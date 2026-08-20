@@ -25,6 +25,7 @@ from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, 
 from fastapi import FastAPI
 
 PORT = 9010
+DEFAULT_WORKSPACE = Path.home() / "WorkSpace"
 CLAUDE_BIN = shutil.which("claude") or str(Path.home() / ".local" / "bin" / "claude")
 
 
@@ -80,7 +81,7 @@ class ClaudeReviewerExecutor(AgentExecutor):
                             "-p",
                             f"You are a code reviewer. {prompt}",
                             "--add-dir",
-                            str(Path(__file__).resolve().parent.parent),
+                            str(DEFAULT_WORKSPACE),
                             "--allowedTools",
                             "Read,Bash",
                             "--dangerously-skip-permissions",
@@ -91,6 +92,7 @@ class ClaudeReviewerExecutor(AgentExecutor):
                 ],
                 capture_output=True,
                 text=True,
+                cwd=DEFAULT_WORKSPACE,
                 timeout=300,
             ),
         )

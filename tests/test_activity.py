@@ -1,3 +1,6 @@
+import asyncio
+import threading
+
 from mcp_a2a_bridge.activity import ActivityLog, TEXT_PREVIEW_LIMIT
 
 
@@ -62,3 +65,79 @@ async def test_eviction_drops_oldest_when_full():
 
     entries = await log.list()
     assert [e.id for e in entries] == ["t2"]
+
+
+def test_lock_is_not_bound_to_an_event_loop():
+    """Regression guard for the ActivityLog cross-thread hang finding.
+
+    The main stdio MCP event loop and the dashboard's uvicorn event loop run
+    on different OS threads, both calling into the shared ActivityLog. An
+    ``asyncio.Lock`` is bound to whichever event loop first awaits it, so a
+    second thread/loop contending for it can hang -- it must never block the
+    primary stdio bridge. Assert the internal lock is a plain
+    ``threading.Lock`` (safe to acquire/release from any OS thread), not an
+    ``asyncio.Lock``.
+    """
+    log = ActivityLog()
+    assert isinstance(log._lock, type(threading.Lock()))
+    assert not isinstance(log._lock, asyncio.Lock)
+
+
+def test_record_blocks_across_threads_while_held_and_unblocks_promptly_on_release():
+    """Demonstrates deterministic, safe contended access across OS threads.
+
+    The main (test) thread directly holds ActivityLog's internal lock, exactly
+    as a thread running the dashboard's uvicorn loop would while another
+    thread's coroutine calls ``record()``. A second OS thread, running its own
+    asyncio event loop, then calls ``record()``. Because the lock is genuinely
+    held by the main thread, the worker thread is *guaranteed* (not merely
+    likely) to still be blocked waiting for it -- this is a logical certainty
+    from mutual exclusion, not a timing race, so asserting non-completion
+    while the lock is held is deterministic rather than sleep-based luck.
+    Once the lock is released, the worker must complete within a short,
+    bounded timeout: if it hung (e.g. because the lock had reverted to an
+    event-loop-bound ``asyncio.Lock``), the ``join(timeout=...)`` below would
+    time out and the thread would still be alive, failing the assertion.
+    """
+    log = ActivityLog()
+    worker_done = threading.Event()
+    worker_error: list[BaseException] = []
+
+    def worker() -> None:
+        async def run() -> None:
+            await log.record(
+                task_id="from-worker-thread",
+                agent="dashboard",
+                kind="send_message",
+                state="working",
+                text="hello from another thread",
+            )
+
+        try:
+            asyncio.run(run())
+        except BaseException as exc:  # pragma: no cover - surfaced via assertion below
+            worker_error.append(exc)
+        finally:
+            worker_done.set()
+
+    log._lock.acquire()
+    try:
+        worker_thread = threading.Thread(target=worker)
+        worker_thread.start()
+
+        # The worker cannot possibly finish record() while we hold the lock:
+        # this is guaranteed by mutual exclusion, not a timing assumption.
+        still_blocked = worker_thread.join(timeout=0.3)
+        assert still_blocked is None
+        assert worker_thread.is_alive()
+        assert not worker_done.is_set()
+    finally:
+        log._lock.release()
+
+    worker_thread.join(timeout=5)
+    assert not worker_thread.is_alive(), "record() hung after the lock was released"
+    assert worker_done.is_set()
+    assert not worker_error, f"worker thread raised: {worker_error}"
+
+    entries = asyncio.run(log.list())
+    assert [e.id for e in entries] == ["from-worker-thread"]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
+import threading
 import time
 import uuid
 from collections import OrderedDict
@@ -31,7 +31,13 @@ class ActivityLog:
     def __init__(self, maxsize: int = 500) -> None:
         self._maxsize = maxsize
         self._entries: OrderedDict[str, TaskActivity] = OrderedDict()
-        self._lock = asyncio.Lock()
+        # A plain threading.Lock is used (not asyncio.Lock) because record()/list()
+        # only do synchronous work while holding it and never await inside the
+        # critical section. The main stdio MCP loop and the dashboard's uvicorn
+        # loop run in different OS threads, and an asyncio.Lock is bound to the
+        # loop that first awaits it, so cross-thread contention could hang the
+        # primary stdio bridge. threading.Lock works safely across threads.
+        self._lock = threading.Lock()
 
     async def record(
         self,
@@ -42,7 +48,7 @@ class ActivityLog:
         state: str,
         text: str,
     ) -> TaskActivity:
-        async with self._lock:
+        with self._lock:
             key = task_id or uuid.uuid4().hex
             now = time.time()
             preview = text[:TEXT_PREVIEW_LIMIT]
@@ -69,5 +75,5 @@ class ActivityLog:
             return entry
 
     async def list(self) -> list[TaskActivity]:
-        async with self._lock:
+        with self._lock:
             return list(reversed(self._entries.values()))

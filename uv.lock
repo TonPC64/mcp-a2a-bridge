@@ -651,6 +651,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "mcp" },
+    { name = "uvicorn" },
 ]
 
 [package.optional-dependencies]
@@ -658,7 +659,6 @@ dev = [
     { name = "a2a-sdk", extra = ["http-server"] },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "uvicorn" },
 ]
 
 [package.metadata]
@@ -670,7 +670,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=2.0.0,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
-    { name = "uvicorn", marker = "extra == 'dev'", specifier = ">=0.30" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
 provides-extras = ["dev"]
 

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import threading
+from dataclasses import dataclass
 
+import uvicorn
 from mcp.server.mcpserver import MCPServer
 
 from mcp_a2a_bridge import client
 from mcp_a2a_bridge.activity import ActivityLog
 from mcp_a2a_bridge.config import ConfigError, load_registry, resolve_config_path
+from mcp_a2a_bridge.dashboard import build_dashboard_app
 from mcp_a2a_bridge.registry import AgentRegistry, resolved_agent_summary
 
 INSTRUCTIONS = (
@@ -19,6 +24,43 @@ INSTRUCTIONS = (
     'state="input_required", reply by calling a2a_send_message again with the '
     "same task_id."
 )
+
+DEFAULT_DASHBOARD_PORT = 9100
+
+
+@dataclass
+class DashboardHandle:
+    thread: threading.Thread
+    server: uvicorn.Server
+
+
+def _dashboard_enabled() -> bool:
+    return os.environ.get("A2A_BRIDGE_DASHBOARD", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def start_dashboard(registry: AgentRegistry, activity: ActivityLog) -> DashboardHandle | None:
+    """Start the dashboard HTTP server on a daemon thread. Returns None if disabled.
+
+    Any startup failure (e.g. the port is already in use) is logged to
+    stderr and swallowed: the dashboard must never prevent the stdio MCP
+    server from running.
+    """
+    if not _dashboard_enabled():
+        return None
+
+    port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
+    app = build_dashboard_app(registry, activity)
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+
+    def run() -> None:
+        try:
+            server.run()
+        except Exception as exc:
+            print(f"mcp-a2a-bridge: dashboard failed to start: {exc}", file=sys.stderr)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    return DashboardHandle(thread=thread, server=server)
 
 
 def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -> MCPServer:
@@ -133,6 +175,8 @@ def main() -> None:
         raise SystemExit(1) from exc
 
     activity = ActivityLog()
+    start_dashboard(registry, activity)
+
     build_server(registry, activity).run(transport="stdio")
 
 

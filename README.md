@@ -103,6 +103,29 @@ hangs the host.
 An agent that returns `state: "input_required"` is answered by calling
 `a2a_send_message` again with the same `task_id`.
 
+## Dashboard
+
+An optional read-only web dashboard shows configured agents' status/skills
+and a rolling history of tasks the bridge has sent, polled, or canceled.
+
+Build the frontend once:
+
+    cd dashboard
+    npm install
+    npm run build
+
+Then enable the dashboard when running the bridge:
+
+    A2A_BRIDGE_DASHBOARD=1 mcp-a2a-bridge
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` to start the dashboard HTTP server |
+| `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Port for the dashboard HTTP server |
+
+Visit `http://127.0.0.1:9100` (or your configured port). The dashboard is
+read-only — it does not send messages to agents.
+
 ## Development
 
 ```bash

@@ -1,0 +1,39 @@
+body {
+  font-family: system-ui, sans-serif;
+  margin: 2rem;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 2rem;
+}
+
+th,
+td {
+  border: 1px solid #ccc;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.badge-ok,
+.badge-completed {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.badge-error,
+.badge-failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.error {
+  color: #991b1b;
+}

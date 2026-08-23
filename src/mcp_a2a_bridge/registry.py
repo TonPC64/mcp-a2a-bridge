@@ -11,6 +11,7 @@ import httpx
 from a2a.client import A2ACardResolver
 from a2a.types import AgentCard
 
+from mcp_a2a_bridge import client
 from mcp_a2a_bridge.config import AgentEntry, Registry, save_agent
 
 CARD_FETCH_TIMEOUT_S = 30.0
@@ -33,6 +34,20 @@ class ResolvedAgent:
     @property
     def reachable(self) -> bool:
         return self.card is not None
+
+
+def resolved_agent_summary(item: ResolvedAgent) -> dict:
+    summary = {
+        "name": item.entry.name,
+        "configured_url": item.entry.url,
+        "reachable": item.reachable,
+    }
+    if item.card is not None:
+        summary.update(client.card_summary(item.card))
+        summary["name"] = item.entry.name
+    else:
+        summary["error"] = item.error
+    return summary
 
 
 async def fetch_card_over_http(entry: AgentEntry) -> AgentCard:

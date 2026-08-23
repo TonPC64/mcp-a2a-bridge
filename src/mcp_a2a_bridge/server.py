@@ -9,7 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_a2a_bridge import client
 from mcp_a2a_bridge.activity import ActivityLog
 from mcp_a2a_bridge.config import ConfigError, load_registry, resolve_config_path
-from mcp_a2a_bridge.registry import AgentRegistry
+from mcp_a2a_bridge.registry import AgentRegistry, resolved_agent_summary
 
 INSTRUCTIONS = (
     "Call remote A2A (Agent2Agent) agents. Start with a2a_list_agents to see "
@@ -31,20 +31,9 @@ def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -
 
         Set refresh=true to re-fetch agent cards that were previously cached.
         """
-        agents = []
-        for item in await registry.resolve_all(refresh=refresh):
-            summary = {
-                "name": item.entry.name,
-                "configured_url": item.entry.url,
-                "reachable": item.reachable,
-            }
-            if item.card is not None:
-                summary.update(client.card_summary(item.card))
-                summary["name"] = item.entry.name
-            else:
-                summary["error"] = item.error
-            agents.append(summary)
-
+        agents = [
+            resolved_agent_summary(item) for item in await registry.resolve_all(refresh=refresh)
+        ]
         return {
             "agents": agents,
             "config_path": str(registry.config_path) if registry.config_path else None,

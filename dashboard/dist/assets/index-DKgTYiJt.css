@@ -1,0 +1,1 @@
+body{margin:2rem;font-family:system-ui,sans-serif}table{border-collapse:collapse;width:100%;margin-bottom:2rem}th,td{text-align:left;border:1px solid #ccc;padding:.5rem}.badge{border-radius:.5rem;padding:.15rem .5rem;font-size:.85rem}.badge-ok,.badge-completed{color:#065f46;background:#d1fae5}.badge-error,.badge-failed{color:#991b1b;background:#fee2e2}.error{color:#991b1b}

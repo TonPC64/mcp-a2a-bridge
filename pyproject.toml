@@ -28,6 +28,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_a2a_bridge"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"dashboard/dist" = "mcp_a2a_bridge/dashboard_dist"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

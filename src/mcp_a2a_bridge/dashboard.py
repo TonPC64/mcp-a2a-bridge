@@ -13,7 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from mcp_a2a_bridge.activity import ActivityLog
 from mcp_a2a_bridge.registry import AgentRegistry, resolved_agent_summary
 
-DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dashboard" / "dist"
+_PACKAGE_DIST_DIR = Path(__file__).resolve().parent / "dashboard_dist"
+_SOURCE_DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dashboard" / "dist"
+DIST_DIR = _PACKAGE_DIST_DIR if _PACKAGE_DIST_DIR.is_dir() else _SOURCE_DIST_DIR
 
 
 def build_dashboard_app(

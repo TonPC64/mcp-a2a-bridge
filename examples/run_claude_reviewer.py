@@ -19,7 +19,7 @@ from a2a.server.routes import (
     create_jsonrpc_routes,
 )
 from a2a.server.tasks import TaskUpdater
-from mcp_a2a_bridge.ttl_task_store import TTLTaskStore
+from mcp_a2a_bridge.sqlite_task_store import SQLiteTaskStore
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from fastapi import FastAPI
 
@@ -179,7 +179,9 @@ class ClaudeReviewerExecutor(AgentExecutor):
 def build_app(card: AgentCard) -> FastAPI:
     handler = DefaultRequestHandler(
         agent_executor=ClaudeReviewerExecutor(),
-        task_store=TTLTaskStore(),
+        task_store=SQLiteTaskStore(
+            Path.home() / ".hermes" / "a2a" / "claude-reviewer.sqlite3"
+        ),
         agent_card=card,
     )
     app = FastAPI()

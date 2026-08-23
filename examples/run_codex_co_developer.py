@@ -18,9 +18,10 @@ from a2a.server.routes import (
     create_agent_card_routes,
     create_jsonrpc_routes,
 )
-from a2a.server.tasks import InMemoryTaskStore, TaskUpdater
+from a2a.server.tasks import TaskUpdater
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from fastapi import FastAPI
+from mcp_a2a_bridge.sqlite_task_store import SQLiteTaskStore
 
 
 def build_card(port: int) -> AgentCard:
@@ -89,7 +90,9 @@ class CodexExecutor(AgentExecutor):
 def build_app(card: AgentCard) -> FastAPI:
     handler = DefaultRequestHandler(
         agent_executor=CodexExecutor(),
-        task_store=InMemoryTaskStore(),
+        task_store=SQLiteTaskStore(
+            Path.home() / ".hermes" / "a2a" / "codex-co-developer.sqlite3"
+        ),
         agent_card=card,
     )
     app = FastAPI()

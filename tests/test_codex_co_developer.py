@@ -1,6 +1,8 @@
 import socket
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 import httpx
 
@@ -9,6 +11,43 @@ def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return sock.getsockname()[1]
+
+
+def test_codex_bin_resolves_even_with_a_minimal_path():
+    """Reproduces the launchd bug: a minimal PATH must still find codex.
+
+    codex-co-developer is often started by launchd (see
+    scripts/com.codex-co-developer.plist), whose PATH is a bare
+    "/usr/bin:/bin:/usr/sbin:/sbin" that excludes Homebrew's bin directory
+    where `codex` actually lives. Without a fixed-directory fallback,
+    shutil.which("codex") returns None under that PATH and the subprocess
+    call fails with "No such file or directory: 'codex'".
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    script = (
+        "import sys; sys.path.insert(0, %r); "
+        "from examples.run_codex_co_developer import _resolve_codex_bin; "
+        "print(_resolve_codex_bin())" % str(repo_root)
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env={"PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "HOME": str(Path.home())},
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+
+    resolved = result.stdout.strip()
+    assert result.returncode == 0, result.stderr
+    assert resolved, "expected a non-empty resolved codex path"
+    assert Path(resolved).is_absolute(), f"expected an absolute path, got {resolved!r}"
+
+
+def test_codex_executor_uses_the_resolved_codex_binary():
+    source = Path("examples/run_codex_co_developer.py").read_text()
+
+    assert '"codex"\n                    if' not in source
+    assert "CODEX_BIN," in source
 
 
 def test_codex_co_developer_publishes_an_a2a_agent_card():

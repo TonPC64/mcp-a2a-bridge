@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -87,8 +88,12 @@ async def test_unknown_agent_is_a_tool_error():
 
 
 async def test_send_message_records_into_activity_log(monkeypatch):
-    async def fake_send_message(entry, card, message, task_id=None, context_id=None, timeout_s=60):
-        return A2AResult(state="completed", text="done", task_id="task-1", context_id="ctx-1", done=True)
+    async def fake_send_message(
+        entry, card, message, task_id=None, context_id=None, timeout_s=60, on_update=None
+    ):
+        return A2AResult(
+            state="completed", text="done", task_id=task_id, context_id="ctx-1", done=True
+        )
 
     monkeypatch.setattr(client_module, "send_message", fake_send_message)
 
@@ -99,11 +104,73 @@ async def test_send_message_records_into_activity_log(monkeypatch):
 
     entries = await activity.list()
     assert len(entries) == 1
-    assert entries[0].id == "task-1"
+    assert entries[0].id
     assert entries[0].agent == "planner"
     assert entries[0].kind == "send_message"
     assert entries[0].state == "completed"
     assert entries[0].text == "done"
+
+
+async def test_new_task_keeps_remote_task_id_unset_and_reconciles_activity(monkeypatch):
+    """A synthetic dashboard id must never be sent to a server creating a task."""
+    started = asyncio.Event()
+    send_update = asyncio.Event()
+    finish = asyncio.Event()
+    sent_task_ids = []
+
+    async def fake_send_message(entry, card, message, **kwargs):
+        sent_task_ids.append(kwargs["task_id"])
+        started.set()
+        await send_update.wait()
+        await kwargs["on_update"](
+            A2AResult("working", "remote-task", "remote-task", "ctx-1", False)
+        )
+        await finish.wait()
+        return A2AResult("completed", "done", "remote-task", "ctx-1", True)
+
+    monkeypatch.setattr(client_module, "send_message", fake_send_message)
+    activity = ActivityLog()
+    server = build_server(fake_registry(planner="http://x"), activity=activity)
+
+    call = asyncio.create_task(
+        server.call_tool("a2a_send_message", {"agent": "planner", "message": "hi"})
+    )
+    await started.wait()
+
+    entries = await activity.list()
+    assert len(entries) == 1
+    assert sent_task_ids == [None]
+    synthetic_id = entries[0].id
+    assert entries[0].state == "working"
+    assert entries[0].text == "Dispatched to agent."
+
+    send_update.set()
+    finish.set()
+    await call
+    entries = await activity.list()
+    assert len(entries) == 1
+    assert entries[0].id == "remote-task"
+    assert entries[0].id != synthetic_id
+    assert entries[0].state == "completed"
+    assert entries[0].text == "done"
+
+
+async def test_send_message_records_a_transport_failure(monkeypatch):
+    """Removing exception recording leaves dispatched tasks stuck as working."""
+    async def fake_send_message(*args, **kwargs):
+        raise RuntimeError("remote disconnected")
+
+    monkeypatch.setattr(client_module, "send_message", fake_send_message)
+    activity = ActivityLog()
+    server = build_server(fake_registry(planner="http://x"), activity=activity)
+
+    with pytest.raises(Exception, match="remote disconnected"):
+        await server.call_tool("a2a_send_message", {"agent": "planner", "message": "hi"})
+
+    entries = await activity.list()
+    assert len(entries) == 1
+    assert entries[0].state == "failed"
+    assert entries[0].text == "remote disconnected"
 
 
 async def test_get_task_records_into_activity_log(monkeypatch):

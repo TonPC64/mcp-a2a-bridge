@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 
 import httpx
@@ -143,6 +143,7 @@ async def consume_stream(
     task_id: str | None,
     context_id: str | None,
     timeout_s: float = 60,
+    on_update: Callable[[A2AResult], Awaitable[None]] | None = None,
 ) -> A2AResult:
     """Accumulate a StreamResponse iterator into one flat result.
 
@@ -156,6 +157,19 @@ async def consume_stream(
     final_text = ""
     state: int | None = None
     timed_out = False
+
+    async def publish() -> None:
+        if on_update is None or state is None:
+            return
+        await on_update(
+            A2AResult(
+                state=state_name(state),
+                text=final_text or "\n".join(pieces),
+                task_id=task_id,
+                context_id=context_id,
+                done=is_done(state),
+            )
+        )
 
     def record(status) -> None:
         """Route a status message: a terminal one is the answer, others are progress."""
@@ -206,6 +220,8 @@ async def consume_stream(
                     if state is None:
                         state = TaskState.TASK_STATE_COMPLETED
 
+                await publish()
+
                 if state is not None and is_done(state):
                     break
     except TimeoutError:
@@ -248,6 +264,7 @@ async def send_message(
     task_id: str | None = None,
     context_id: str | None = None,
     timeout_s: int = 60,
+    on_update: Callable[[A2AResult], Awaitable[None]] | None = None,
 ) -> A2AResult:
     async with _http_client(entry) as http_client:
         client = _build_client(http_client, card)
@@ -264,6 +281,7 @@ async def send_message(
             task_id=task_id,
             context_id=context_id,
             timeout_s=timeout_s,
+            on_update=on_update,
         )
 
 

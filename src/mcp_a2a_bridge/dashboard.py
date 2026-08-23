@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from mcp_a2a_bridge.activity import ActivityLog
@@ -24,13 +26,20 @@ def build_dashboard_app(
 
     @app.get("/api/agents")
     async def get_agents() -> dict:
-        agents = [
-            resolved_agent_summary(item) for item in await registry.resolve_all(refresh=False)
-        ]
-        return {"agents": agents}
+        return await agent_snapshot()
 
     @app.get("/api/tasks")
     async def get_tasks() -> dict:
+        return await task_snapshot()
+
+    async def agent_snapshot() -> dict:
+        return {
+            "agents": [
+                resolved_agent_summary(item) for item in await registry.resolve_all(refresh=False)
+            ]
+        }
+
+    async def task_snapshot() -> dict:
         entries = await activity.list()
         return {
             "tasks": [
@@ -47,6 +56,26 @@ def build_dashboard_app(
             ]
         }
 
+    def stream(event: str, subscribe, unsubscribe, initial_snapshot):
+        async def events():
+            subscriber = subscribe()
+            try:
+                yield encode_sse(event, await initial_snapshot())
+                while True:
+                    yield encode_sse(event, await asyncio.to_thread(subscriber.get))
+            finally:
+                unsubscribe(subscriber)
+
+        return StreamingResponse(events(), media_type="text/event-stream")
+
+    @app.get("/api/agents/events")
+    async def stream_agents(request: Request) -> StreamingResponse:
+        return stream("agents", registry.subscribe, registry.unsubscribe, agent_snapshot)
+
+    @app.get("/api/tasks/events")
+    async def stream_tasks(request: Request) -> StreamingResponse:
+        return stream("tasks", activity.subscribe, activity.unsubscribe, task_snapshot)
+
     if dist_dir.is_dir():
         app.mount("/", StaticFiles(directory=dist_dir, html=True), name="dashboard")
     else:
@@ -59,3 +88,7 @@ def build_dashboard_app(
             )
 
     return app
+
+
+def encode_sse(event: str, data: dict) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n".encode()

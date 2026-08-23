@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Queue
+from typing import Any
 
 import httpx
 from a2a.client import A2ACardResolver
@@ -13,6 +16,7 @@ from a2a.types import AgentCard
 
 from mcp_a2a_bridge import client
 from mcp_a2a_bridge.config import AgentEntry, Registry, save_agent
+from mcp_a2a_bridge.snapshots import SnapshotSubscribers
 
 CARD_FETCH_TIMEOUT_S = 30.0
 
@@ -67,31 +71,38 @@ class AgentRegistry:
         self._registry = registry
         self._fetch_card = fetch_card or fetch_card_over_http
         self._cards: dict[str, AgentCard] = {}
+        self._lock = threading.RLock()
+        self._subscribers = SnapshotSubscribers()
+        self._summaries: dict[str, dict] = {}
 
     @property
     def config_path(self) -> Path | None:
         return self._registry.path
 
     def names(self) -> list[str]:
-        return list(self._registry.agents)
+        with self._lock:
+            return list(self._registry.agents)
 
     def entry(self, name: str) -> AgentEntry:
-        try:
-            return self._registry.agents[name]
-        except KeyError:
-            known = ", ".join(sorted(self._registry.agents)) or "(none configured)"
-            raise UnknownAgentError(
-                f'Unknown agent "{name}". Configured agents: {known}'
-            ) from None
+        with self._lock:
+            try:
+                return self._registry.agents[name]
+            except KeyError:
+                known = ", ".join(sorted(self._registry.agents)) or "(none configured)"
+                raise UnknownAgentError(
+                    f'Unknown agent "{name}". Configured agents: {known}'
+                ) from None
 
     async def card(self, name: str) -> AgentCard:
         entry = self.entry(name)
-        cached = self._cards.get(name)
+        with self._lock:
+            cached = self._cards.get(name)
         if cached is not None:
             return cached
 
         card = await self._fetch_one(entry)
-        self._cards[name] = card
+        with self._lock:
+            self._cards[name] = card
         return card
 
     async def _fetch_one(self, entry: AgentEntry) -> AgentCard:
@@ -107,19 +118,27 @@ class AgentRegistry:
         if refresh:
             self.clear_cache()
 
-        entries = list(self._registry.agents.values())
+        with self._lock:
+            entries = list(self._registry.agents.values())
         results = await asyncio.gather(*(self._resolve_one(e) for e in entries))
-        return list(results)
+        resolved = list(results)
+        summaries = [resolved_agent_summary(item) for item in resolved]
+        with self._lock:
+            self._summaries = {summary["name"]: summary for summary in summaries}
+        self._subscribers.publish({"agents": summaries})
+        return resolved
 
     async def _resolve_one(self, entry: AgentEntry) -> ResolvedAgent:
-        cached = self._cards.get(entry.name)
+        with self._lock:
+            cached = self._cards.get(entry.name)
         if cached is not None:
             return ResolvedAgent(entry=entry, card=cached, error=None)
         try:
             card = await self._fetch_one(entry)
         except AgentUnreachableError as exc:
             return ResolvedAgent(entry=entry, card=None, error=str(exc))
-        self._cards[entry.name] = card
+        with self._lock:
+            self._cards[entry.name] = card
         return ResolvedAgent(entry=entry, card=card, error=None)
 
     async def add(
@@ -135,10 +154,33 @@ class AgentRegistry:
         if persist and self._registry.path is not None:
             save_agent(self._registry.path, entry)
 
-        self._registry.agents[name] = entry
-        self._cards[name] = card
-
-        return ResolvedAgent(entry=entry, card=card, error=None)
+        with self._lock:
+            self._registry.agents[name] = entry
+            self._cards[name] = card
+        resolved = ResolvedAgent(entry=entry, card=card, error=None)
+        summary = resolved_agent_summary(resolved)
+        with self._lock:
+            self._summaries[name] = summary
+            snapshot = {
+                "agents": [
+                    self._summaries[configured.name]
+                    for configured in self._registry.agents.values()
+                    if configured.name in self._summaries
+                ]
+            }
+        self._subscribers.publish(snapshot)
+        return resolved
 
     def clear_cache(self) -> None:
-        self._cards.clear()
+        with self._lock:
+            self._cards.clear()
+
+    def subscribe(self) -> Queue[dict[str, Any]]:
+        return self._subscribers.subscribe()
+
+    def unsubscribe(self, subscriber: Queue[dict[str, Any]]) -> None:
+        self._subscribers.unsubscribe(subscriber)
+
+    @property
+    def subscriber_count(self) -> int:
+        return self._subscribers.count

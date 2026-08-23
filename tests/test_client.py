@@ -187,6 +187,32 @@ async def test_consume_stream_final_message_replaces_progress_notes():
     assert result.done is True
 
 
+async def test_consume_stream_reports_each_status_before_returning():
+    """Removing stream callbacks would hide live progress from the dashboard."""
+    updates = []
+
+    async def record(update):
+        updates.append(update)
+    chunks = as_stream([
+        task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),
+        status_chunk("t1", TaskState.TASK_STATE_WORKING, "thinking"),
+        status_chunk("t1", TaskState.TASK_STATE_COMPLETED, "done"),
+    ])
+
+    await consume_stream(
+        chunks,
+        task_id=None,
+        context_id=None,
+        on_update=record,
+    )
+
+    assert [(update.state, update.text) for update in updates] == [
+        ("submitted", ""),
+        ("working", "thinking"),
+        ("completed", "done"),
+    ]
+
+
 async def test_consume_stream_keeps_progress_when_final_message_is_empty():
     chunks = as_stream([
         task_chunk("t1", TaskState.TASK_STATE_SUBMITTED),

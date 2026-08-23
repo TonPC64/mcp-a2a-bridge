@@ -6,7 +6,6 @@ import asyncio
 import os
 import shlex
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -64,6 +63,8 @@ def _resolve_codex_bin() -> str:
 
 
 CODEX_BIN = _resolve_codex_bin()
+CODEX_TIMEOUT_SECONDS = 600
+HEARTBEAT_SECONDS = 15
 
 
 def build_card(port: int) -> AgentCard:
@@ -94,6 +95,20 @@ def build_card(port: int) -> AgentCard:
 
 
 class CodexExecutor(AgentExecutor):
+    def __init__(self) -> None:
+        self._processes: dict[str, asyncio.subprocess.Process] = {}
+        self._cancelled: set[str] = set()
+
+    async def _stop_process(self, process: asyncio.subprocess.Process) -> None:
+        if process.returncode is not None:
+            return
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=5)
+        except TimeoutError:
+            process.kill()
+            await process.wait()
+
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task = context.current_task
         if task is None:
@@ -118,25 +133,80 @@ class CodexExecutor(AgentExecutor):
             str(Path(__file__).resolve().parent.parent),
             prompt,
         ]
-        result = await asyncio.get_running_loop().run_in_executor(
-            None,
-            lambda: subprocess.run(
-                [
-                    "/bin/zsh",
-                    "-dfc",
-                    f'source "$HOME/.zshrc" >/dev/null 2>&1; exec {shlex.join(command)}',
-                ],
-                capture_output=True,
-                text=True,
+        process = None
+        communicate_task = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "/bin/zsh",
+                "-dfc",
+                f'source "$HOME/.zshrc" >/dev/null 2>&1; exec {shlex.join(command)}',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
                 env=child_env,
-                timeout=600,
-            ),
-        )
-        reply = result.stdout.strip() if result.returncode == 0 else f"error: {result.stderr.strip()}"
-        await updater.complete(updater.new_agent_message([Part(text=reply)]))
+            )
+            self._processes[task.id] = process
+            communicate_task = asyncio.create_task(process.communicate())
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + CODEX_TIMEOUT_SECONDS
+
+            while not communicate_task.done():
+                remaining = deadline - loop.time()
+                if remaining <= 0:
+                    await self._stop_process(process)
+                    communicate_task.cancel()
+                    try:
+                        await communicate_task
+                    except asyncio.CancelledError:
+                        pass
+                    await updater.failed(
+                        updater.new_agent_message(
+                            [Part(text="Codex execution exceeded the 10-minute timeout.")]
+                        )
+                    )
+                    return
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(communicate_task),
+                        timeout=min(HEARTBEAT_SECONDS, remaining),
+                    )
+                except TimeoutError:
+                    await updater.start_work(
+                        updater.new_agent_message([Part(text="Codex is still working.")])
+                    )
+
+            stdout, stderr = await communicate_task
+            if task.id in self._cancelled:
+                return
+            reply = stdout.decode().strip() if process.returncode == 0 else stderr.decode().strip()
+            event = updater.new_agent_message([Part(text=reply or "Codex returned no response.")])
+            if process.returncode == 0:
+                await updater.complete(event)
+            else:
+                await updater.failed(event)
+        except asyncio.CancelledError:
+            if process is not None:
+                await self._stop_process(process)
+            raise
+        except Exception as exc:
+            await updater.failed(
+                updater.new_agent_message([Part(text=f"Codex execution failed: {exc}")])
+            )
+        finally:
+            self._processes.pop(task.id, None)
+            self._cancelled.discard(task.id)
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-        return None
+        task_id = context.task_id or (context.current_task.id if context.current_task else None)
+        if task_id is None:
+            return
+        self._cancelled.add(task_id)
+        process = self._processes.get(task_id)
+        if process is not None:
+            await self._stop_process(process)
+        task = context.current_task
+        if task is not None:
+            updater = TaskUpdater(event_queue, task.id, task.context_id)
+            await updater.cancel(updater.new_agent_message([Part(text="Codex execution canceled.")]))
 
 
 def build_app(card: AgentCard) -> FastAPI:

@@ -106,7 +106,10 @@ An agent that returns `state: "input_required"` is answered by calling
 ## Dashboard
 
 An optional read-only web dashboard shows configured agents' status/skills
-and a rolling history of tasks the bridge has sent, polled, or canceled.
+and a rolling history of tasks the bridge has sent, polled, or canceled. It
+uses Server-Sent Events (SSE) to update both views live: `/api/agents/events`
+emits `agents` events with `{ "agents": [...] }`, and `/api/tasks/events`
+emits `tasks` events with `{ "tasks": [...] }`.
 
 Build the frontend once:
 
@@ -125,6 +128,11 @@ Then enable the dashboard when running the bridge:
 
 Visit `http://127.0.0.1:9100` (or your configured port). The dashboard is
 read-only — it does not send messages to agents.
+
+Task history is live only when this dashboard is started by the same
+`mcp-a2a-bridge` process (via `A2A_BRIDGE_DASHBOARD=1`). It uses that process's
+in-memory activity log; a separately started dashboard, including one on
+`:9100`, cannot display activity from another bridge process.
 
 ## Development
 

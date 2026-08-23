@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import uuid
 from dataclasses import dataclass
 
 import uvicorn
@@ -102,22 +103,65 @@ def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -
         working when timeout_s elapses, this returns done=false with a task_id
         to poll rather than blocking.
         """
-        entry = registry.entry(agent)
-        card = await registry.card(agent)
-        result = await client.send_message(
-            entry,
-            card,
-            message,
-            task_id=task_id,
-            context_id=context_id,
-            timeout_s=timeout_s,
-        )
+        local_activity_task_id = task_id or uuid.uuid4().hex
+        activity_task_id = local_activity_task_id
         await activity.record(
-            task_id=result.task_id,
+            task_id=activity_task_id,
+            agent=agent,
+            kind="send_message",
+            state="working",
+            text="Dispatched to agent.",
+        )
+
+        async def record_update(result: client.A2AResult) -> None:
+            nonlocal activity_task_id
+            activity_task_id = result.task_id or activity_task_id
+            await activity.record(
+                task_id=activity_task_id,
+                agent=agent,
+                kind="send_message",
+                state="working" if result.state == "submitted" else result.state,
+                text=result.text,
+                replaces_task_id=(
+                    local_activity_task_id
+                    if task_id is None and activity_task_id != local_activity_task_id
+                    else None
+                ),
+            )
+
+        try:
+            entry = registry.entry(agent)
+            card = await registry.card(agent)
+            result = await client.send_message(
+                entry,
+                card,
+                message,
+                task_id=task_id,
+                context_id=context_id,
+                timeout_s=timeout_s,
+                on_update=record_update,
+            )
+        except Exception as exc:
+            await activity.record(
+                task_id=activity_task_id,
+                agent=agent,
+                kind="send_message",
+                state="failed",
+                text=str(exc),
+            )
+            raise
+        activity_task_id = result.task_id or activity_task_id
+        await activity.record(
+            task_id=activity_task_id,
             agent=agent,
             kind="send_message",
             state=result.state,
             text=result.text,
+            replaces_task_id=(
+                local_activity_task_id
+                if task_id is None and activity_task_id != local_activity_task_id
+                else None
+            ),
         )
         return result.to_dict()
 

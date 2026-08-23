@@ -1,12 +1,10 @@
 import { AgentList, type Agent } from "./AgentList";
 import { TaskList, type TaskActivity } from "./TaskList";
-import { useApi } from "./useApi";
-
-const POLL_INTERVAL_MS = 3000;
+import { useEventSource } from "./useEventSource";
 
 export default function App() {
-  const agents = useApi<{ agents: Agent[] }>("/api/agents", POLL_INTERVAL_MS);
-  const tasks = useApi<{ tasks: TaskActivity[] }>("/api/tasks", POLL_INTERVAL_MS);
+  const agents = useEventSource<{ agents: Agent[] }>("/api/agents/events", "agents");
+  const tasks = useEventSource<{ tasks: TaskActivity[] }>("/api/tasks/events", "tasks");
 
   return (
     <main>

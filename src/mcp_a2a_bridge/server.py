@@ -7,6 +7,7 @@ import sys
 from mcp.server.mcpserver import MCPServer
 
 from mcp_a2a_bridge import client
+from mcp_a2a_bridge.activity import ActivityLog
 from mcp_a2a_bridge.config import ConfigError, load_registry, resolve_config_path
 from mcp_a2a_bridge.registry import AgentRegistry
 
@@ -20,8 +21,9 @@ INSTRUCTIONS = (
 )
 
 
-def build_server(registry: AgentRegistry) -> MCPServer:
+def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -> MCPServer:
     server = MCPServer(name="a2a-bridge", instructions=INSTRUCTIONS)
+    activity = activity if activity is not None else ActivityLog()
 
     @server.tool()
     async def a2a_list_agents(refresh: bool = False) -> dict:
@@ -73,6 +75,13 @@ def build_server(registry: AgentRegistry) -> MCPServer:
             context_id=context_id,
             timeout_s=timeout_s,
         )
+        await activity.record(
+            task_id=result.task_id,
+            agent=agent,
+            kind="send_message",
+            state=result.state,
+            text=result.text,
+        )
         return result.to_dict()
 
     @server.tool()
@@ -81,6 +90,13 @@ def build_server(registry: AgentRegistry) -> MCPServer:
         entry = registry.entry(agent)
         card = await registry.card(agent)
         result = await client.get_task(entry, card, task_id)
+        await activity.record(
+            task_id=result.task_id or task_id,
+            agent=agent,
+            kind="get_task",
+            state=result.state,
+            text=result.text,
+        )
         return result.to_dict()
 
     @server.tool()
@@ -89,6 +105,13 @@ def build_server(registry: AgentRegistry) -> MCPServer:
         entry = registry.entry(agent)
         card = await registry.card(agent)
         result = await client.cancel_task(entry, card, task_id)
+        await activity.record(
+            task_id=result.task_id or task_id,
+            agent=agent,
+            kind="cancel_task",
+            state=result.state,
+            text=result.text,
+        )
         return result.to_dict()
 
     @server.tool()
@@ -120,7 +143,8 @@ def main() -> None:
         print(f"mcp-a2a-bridge: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    build_server(registry).run(transport="stdio")
+    activity = ActivityLog()
+    build_server(registry, activity).run(transport="stdio")
 
 
 if __name__ == "__main__":

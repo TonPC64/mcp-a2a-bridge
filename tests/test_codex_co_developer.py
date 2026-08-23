@@ -48,6 +48,9 @@ def test_codex_executor_uses_the_resolved_codex_binary():
 
     assert '"codex"\n                    if' not in source
     assert "CODEX_BIN," in source
+    assert '"/bin/zsh",' in source
+    assert '"-dfc",' in source
+    assert 'source "$HOME/.zshrc" >/dev/null 2>&1; exec' in source
 
 
 def test_codex_co_developer_publishes_an_a2a_agent_card():

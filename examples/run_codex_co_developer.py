@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -106,19 +107,24 @@ class CodexExecutor(AgentExecutor):
         child_env["PATH"] = os.pathsep.join(
             [str(directory) for directory in _CODEX_SEARCH_DIRS] + [child_env.get("PATH", "")]
         )
+        command = [
+            CODEX_BIN,
+            "exec",
+            "--sandbox",
+            "workspace-write",
+            "--color",
+            "never",
+            "-C",
+            str(Path(__file__).resolve().parent.parent),
+            prompt,
+        ]
         result = await asyncio.get_running_loop().run_in_executor(
             None,
             lambda: subprocess.run(
                 [
-                    CODEX_BIN,
-                    "exec",
-                    "--sandbox",
-                    "workspace-write",
-                    "--color",
-                    "never",
-                    "-C",
-                    str(Path(__file__).resolve().parent.parent),
-                    prompt,
+                    "/bin/zsh",
+                    "-dfc",
+                    f'source "$HOME/.zshrc" >/dev/null 2>&1; exec {shlex.join(command)}',
                 ],
                 capture_output=True,
                 text=True,

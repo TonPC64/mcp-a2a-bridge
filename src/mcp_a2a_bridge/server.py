@@ -48,9 +48,15 @@ def start_dashboard(registry: AgentRegistry, activity: ActivityLog) -> Dashboard
     if not _dashboard_enabled():
         return None
 
-    port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
-    app = build_dashboard_app(registry, activity)
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    try:
+        port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
+        app = build_dashboard_app(registry, activity)
+        server = uvicorn.Server(
+            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+        )
+    except Exception as exc:
+        print(f"mcp-a2a-bridge: dashboard failed to start: {exc}", file=sys.stderr)
+        return None
 
     def run() -> None:
         try:

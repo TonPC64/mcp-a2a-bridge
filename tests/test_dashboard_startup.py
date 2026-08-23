@@ -35,6 +35,15 @@ def test_start_dashboard_is_disabled_by_default(monkeypatch):
     assert handle is None
 
 
+def test_start_dashboard_returns_none_on_invalid_port(monkeypatch):
+    monkeypatch.setenv("A2A_BRIDGE_DASHBOARD", "1")
+    monkeypatch.setenv("A2A_BRIDGE_DASHBOARD_PORT", "not-a-number")
+
+    handle = start_dashboard(fake_registry(), ActivityLog())
+
+    assert handle is None
+
+
 def test_start_dashboard_serves_api_when_enabled(monkeypatch):
     from a2a.types import AgentCard
 

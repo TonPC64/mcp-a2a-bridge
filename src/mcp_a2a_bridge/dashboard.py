@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import queue
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -16,6 +17,31 @@ from mcp_a2a_bridge.registry import AgentRegistry, resolved_agent_summary
 _PACKAGE_DIST_DIR = Path(__file__).resolve().parent / "dashboard_dist"
 _SOURCE_DIST_DIR = Path(__file__).resolve().parent.parent.parent / "dashboard" / "dist"
 DIST_DIR = _PACKAGE_DIST_DIR if _PACKAGE_DIST_DIR.is_dir() else _SOURCE_DIST_DIR
+
+# How long each blocking `Queue.get()` slice waits before giving control back
+# to the event loop. A published snapshot is delivered as soon as it arrives
+# (queue.get returns immediately once an item is available), so this value
+# only bounds worst-case *shutdown/cancellation* latency, not push latency.
+# 200ms is short enough that Ctrl+C/SIGINT shutdown feels instant while still
+# avoiding a busy loop.
+_QUEUE_POLL_INTERVAL_SECONDS = 0.2
+
+
+async def _wait_for_next(subscriber: "queue.Queue[dict]") -> dict:
+    """Block for the next published snapshot without wedging a worker thread.
+
+    ``subscriber.get()`` with no timeout blocks its OS worker thread
+    indefinitely; cancelling the awaiting asyncio task does not unblock that
+    thread, which used to hang process shutdown forever inside
+    ``loop.shutdown_default_executor()``. Waiting in short timed slices lets
+    each worker-thread call return on its own, so cancellation is observed
+    between slices and the executor can be joined promptly.
+    """
+    while True:
+        try:
+            return await asyncio.to_thread(subscriber.get, True, _QUEUE_POLL_INTERVAL_SECONDS)
+        except queue.Empty:
+            continue
 
 
 def build_dashboard_app(
@@ -64,7 +90,7 @@ def build_dashboard_app(
             try:
                 yield encode_sse(event, await initial_snapshot())
                 while True:
-                    yield encode_sse(event, await asyncio.to_thread(subscriber.get))
+                    yield encode_sse(event, await _wait_for_next(subscriber))
             finally:
                 unsubscribe(subscriber)
 

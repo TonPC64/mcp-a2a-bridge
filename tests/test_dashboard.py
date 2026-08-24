@@ -1,6 +1,8 @@
 import asyncio
+import contextlib
 import json
 import threading
+import time
 
 from a2a.types import AgentCard
 from fastapi.testclient import TestClient
@@ -199,3 +201,68 @@ def test_activity_publish_from_another_thread_notifies_subscriber():
     assert not thread.is_alive()
     assert subscriber.get(timeout=1)["tasks"][0]["id"] == "t1"
     activity.unsubscribe(subscriber)
+
+
+async def test_task_stream_cancellation_does_not_leave_blocked_worker_thread():
+    """The SSE generator's wait must be interruptible so the process can shut down.
+
+    Regression test for: cancelling the SSE stream task used to leave an
+    ``asyncio_*`` worker thread permanently blocked inside
+    ``subscriber.get()`` (no timeout), which made
+    ``loop.shutdown_default_executor()`` hang forever and prevented the
+    dashboard process from exiting on SIGINT.
+    """
+    activity = ActivityLog()
+    app = build_dashboard_app(fake_registry(), activity)
+    response = await event_stream(app, "/api/tasks/events")
+
+    # Consume the initial snapshot so the generator is parked on the
+    # blocking wait for the next update (no publish is pending).
+    assert await next_event(response) == ("tasks", {"tasks": []})
+
+    before_workers = {th.ident for th in threading.enumerate()}
+
+    task = asyncio.ensure_future(response.body_iterator.__anext__())
+    await asyncio.sleep(0.05)
+    task.cancel()
+
+    # A prompt cancellation must not hang. With the old unbounded
+    # `subscriber.get()`, this wait_for would time out because cancelling
+    # the asyncio task does not unblock the underlying OS thread.
+    with contextlib.suppress(BaseException):
+        await asyncio.wait_for(task, timeout=2)
+
+    await response.body_iterator.aclose()
+    activity.unsubscribe(activity.subscribe())  # no-op safety, keeps counts sane
+
+    # The real property under test: no lingering worker thread stuck on the
+    # queue, and the executor can be shut down promptly.
+    await asyncio.wait_for(asyncio.get_running_loop().shutdown_default_executor(), timeout=2)
+
+    after_workers = {th.ident for th in threading.enumerate()}
+    leaked = after_workers - before_workers
+    assert not leaked, f"worker thread(s) left running after cancellation: {leaked}"
+
+
+async def test_task_stream_push_latency_stays_fast():
+    """Publishing a snapshot must reach a connected client almost immediately.
+
+    Guards against a fix that turns the interruptible wait into a slow poll.
+    """
+    activity = ActivityLog()
+    app = build_dashboard_app(fake_registry(), activity)
+    response = await event_stream(app, "/api/tasks/events")
+    assert await next_event(response) == ("tasks", {"tasks": []})
+
+    start = time.monotonic()
+    await activity.record(
+        task_id="t1", agent="planner", kind="send_message", state="completed", text="done"
+    )
+    event, data = await asyncio.wait_for(next_event(response), timeout=1)
+    elapsed = time.monotonic() - start
+
+    assert event == "tasks"
+    assert data["tasks"][0]["id"] == "t1"
+    assert elapsed < 1.0
+
+    await response.body_iterator.aclose()

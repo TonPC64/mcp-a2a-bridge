@@ -23,6 +23,7 @@ from a2a.server.tasks import TaskUpdater
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from fastapi import FastAPI
 from mcp_a2a_bridge.sqlite_task_store import SQLiteTaskStore
+from mcp_a2a_bridge.activity_writer import ActivityWriter, build_activity_writer
 
 
 # Common install locations for the codex CLI that a login shell's PATH would
@@ -95,9 +96,18 @@ def build_card(port: int) -> AgentCard:
 
 
 class CodexExecutor(AgentExecutor):
-    def __init__(self) -> None:
+    def __init__(self, activity_writer: ActivityWriter | None = None) -> None:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._cancelled: set[str] = set()
+        self._activity_writer = activity_writer if activity_writer is not None else build_activity_writer("codex-co-developer")
+
+    def _record_activity(self, task_id: str, source: str, state: str, text: str) -> None:
+        if self._activity_writer is None:
+            return
+        try:
+            self._activity_writer.record(task_id, source=source, state=state, text=text)
+        except Exception:
+            pass
 
     async def _stop_process(self, process: asyncio.subprocess.Process) -> None:
         if process.returncode is not None:
@@ -117,6 +127,8 @@ class CodexExecutor(AgentExecutor):
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.start_work()
+        source = self._activity_writer.source_for(context) if self._activity_writer else "remote"
+        self._record_activity(task.id, source, "working", "Task received.")
         prompt = get_message_text(context.message)
         child_env = os.environ.copy()
         child_env["PATH"] = os.pathsep.join(
@@ -163,6 +175,7 @@ class CodexExecutor(AgentExecutor):
                             [Part(text="Codex execution exceeded the 10-minute timeout.")]
                         )
                     )
+                    self._record_activity(task.id, source, "failed", "Codex execution exceeded the timeout.")
                     return
                 try:
                     await asyncio.wait_for(
@@ -173,6 +186,7 @@ class CodexExecutor(AgentExecutor):
                     await updater.start_work(
                         updater.new_agent_message([Part(text="Codex is still working.")])
                     )
+                    self._record_activity(task.id, source, "working", "Codex is still working.")
 
             stdout, stderr = await communicate_task
             if task.id in self._cancelled:
@@ -181,8 +195,10 @@ class CodexExecutor(AgentExecutor):
             event = updater.new_agent_message([Part(text=reply or "Codex returned no response.")])
             if process.returncode == 0:
                 await updater.complete(event)
+                self._record_activity(task.id, source, "completed", reply or "Codex returned no response.")
             else:
                 await updater.failed(event)
+                self._record_activity(task.id, source, "failed", reply or "Codex returned no response.")
         except asyncio.CancelledError:
             if process is not None:
                 await self._stop_process(process)
@@ -191,6 +207,7 @@ class CodexExecutor(AgentExecutor):
             await updater.failed(
                 updater.new_agent_message([Part(text=f"Codex execution failed: {exc}")])
             )
+            self._record_activity(task.id, source, "failed", f"Codex execution failed: {exc}")
         finally:
             self._processes.pop(task.id, None)
             self._cancelled.discard(task.id)
@@ -207,6 +224,8 @@ class CodexExecutor(AgentExecutor):
         if task is not None:
             updater = TaskUpdater(event_queue, task.id, task.context_id)
             await updater.cancel(updater.new_agent_message([Part(text="Codex execution canceled.")]))
+            source = self._activity_writer.source_for(context) if self._activity_writer else "remote"
+            self._record_activity(task.id, source, "canceled", "Codex execution canceled.")
 
 
 def build_app(card: AgentCard) -> FastAPI:

@@ -1,4 +1,5 @@
 import time
+import sqlite3
 
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore
 
@@ -110,3 +111,17 @@ def test_connections_have_a_short_busy_timeout(tmp_path):
         (busy_timeout_ms,) = connection.execute("PRAGMA busy_timeout").fetchone()
 
     assert busy_timeout_ms == 1000
+
+
+def test_existing_database_gains_origin_columns(tmp_path):
+    path = tmp_path / "activity.sqlite3"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            "CREATE TABLE activity (id TEXT PRIMARY KEY, agent TEXT NOT NULL, kind TEXT NOT NULL, "
+            "state TEXT NOT NULL, text TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL)"
+        )
+
+    store = SQLiteActivityStore(path)
+    store.upsert(_entry("t1", 1.0, source="copilot", destination="codex"))
+
+    assert store.get("t1")["source"] == "copilot"

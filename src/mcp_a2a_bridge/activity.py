@@ -27,6 +27,8 @@ class TaskActivity:
     text: str
     created_at: float
     updated_at: float
+    source: str = ""
+    destination: str = ""
 
 
 class ActivityLog:
@@ -176,6 +178,8 @@ class ActivityLog:
                     "text": entry.text,
                     "created_at": entry.created_at,
                     "updated_at": entry.updated_at,
+                    **({"source": entry.source} if entry.source else {}),
+                    **({"destination": entry.destination} if entry.destination else {}),
                 }
                 for entry in reversed(self._entries.values())
             ]

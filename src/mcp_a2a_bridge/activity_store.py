@@ -40,6 +40,8 @@ class SQLiteActivityStore:
                 CREATE TABLE IF NOT EXISTS activity (
                     id TEXT PRIMARY KEY,
                     agent TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT '',
+                    destination TEXT NOT NULL DEFAULT '',
                     kind TEXT NOT NULL,
                     state TEXT NOT NULL,
                     text TEXT NOT NULL,
@@ -48,6 +50,10 @@ class SQLiteActivityStore:
                 )
                 """
             )
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(activity)")}
+            for name in ("source", "destination"):
+                if name not in columns:
+                    connection.execute(f"ALTER TABLE activity ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
             connection.commit()
 
     def _connect(self) -> sqlite3.Connection:
@@ -73,13 +79,16 @@ class SQLiteActivityStore:
         )
 
     def upsert(self, entry: dict) -> None:
+        entry = {"source": "", "destination": "", **entry}
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO activity(id, agent, kind, state, text, created_at, updated_at)
-                VALUES (:id, :agent, :kind, :state, :text, :created_at, :updated_at)
+                INSERT INTO activity(id, agent, source, destination, kind, state, text, created_at, updated_at)
+                VALUES (:id, :agent, :source, :destination, :kind, :state, :text, :created_at, :updated_at)
                 ON CONFLICT(id) DO UPDATE SET
                     agent=excluded.agent,
+                    source=excluded.source,
+                    destination=excluded.destination,
                     kind=excluded.kind,
                     state=excluded.state,
                     text=excluded.text,
@@ -93,7 +102,7 @@ class SQLiteActivityStore:
     def get(self, entry_id: str) -> dict | None:
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT id, agent, kind, state, text, created_at, updated_at "
+                "SELECT id, agent, source, destination, kind, state, text, created_at, updated_at "
                 "FROM activity WHERE id = ?",
                 (entry_id,),
             ).fetchone()
@@ -104,7 +113,7 @@ class SQLiteActivityStore:
     def list(self) -> list[dict]:
         with self._connect() as connection:
             rows = connection.execute(
-                "SELECT id, agent, kind, state, text, created_at, updated_at "
+                "SELECT id, agent, source, destination, kind, state, text, created_at, updated_at "
                 "FROM activity ORDER BY updated_at DESC"
             ).fetchall()
         return [self._row_to_dict(row) for row in rows]
@@ -116,5 +125,10 @@ class SQLiteActivityStore:
 
     @staticmethod
     def _row_to_dict(row: tuple) -> dict:
-        keys = ("id", "agent", "kind", "state", "text", "created_at", "updated_at")
-        return dict(zip(keys, row))
+        keys = ("id", "agent", "source", "destination", "kind", "state", "text", "created_at", "updated_at")
+        entry = dict(zip(keys, row))
+        if not entry["source"]:
+            entry.pop("source")
+        if not entry["destination"]:
+            entry.pop("destination")
+        return entry

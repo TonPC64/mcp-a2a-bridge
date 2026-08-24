@@ -3,8 +3,8 @@
 An MCP server that lets coding agents — GitHub Copilot CLI, Claude Code, Codex,
 and Hermes — call remote [A2A](https://a2a-protocol.org) agents.
 
-The bridge is an A2A **client**. It does not expose your coding agent as an A2A
-server.
+The bridge is an A2A **client**. This repository also ships `copilot-a2a-agent`,
+the loopback-only A2A server that exposes GitHub Copilot CLI.
 
 ## Requirements
 
@@ -107,8 +107,9 @@ An agent that returns `state: "input_required"` is answered by calling
 
 A standalone, read-only web dashboard shows configured agents' status/skills
 and a live, rolling history of task activity from *every* `mcp-a2a-bridge`
-process on the machine — Copilot's, Hermes', or any other MCP host's. It runs
-as its own long-lived process, independent of any bridge, so multiple devices
+process on the machine — Copilot's, Hermes', or any other MCP host's. It also
+includes Hermes native A2A exchanges, including work received from other
+agents. It runs as its own long-lived process, independent of any bridge, so multiple devices
 on the same local network can view it at once. It uses Server-Sent Events
 (SSE) to push updates: `/api/agents/events` emits `agents` events with
 `{ "agents": [...] }`, and `/api/tasks/events` emits `tasks` events with
@@ -130,10 +131,12 @@ Then enable each bridge process to report into the shared activity store:
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` on a *bridge* process to persist its activity into the shared SQLite store |
+| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` on a bridge or Copilot server process to persist its activity into the shared SQLite store |
 | `A2A_BRIDGE_ACTIVITY_DB` | `~/.config/a2a-bridge/activity.sqlite3` | Path to the shared activity store, read by the dashboard process and written by every enabled bridge process |
 | `A2A_BRIDGE_DASHBOARD_HOST` | `0.0.0.0` | Host the dashboard HTTP server binds to |
 | `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Port for the dashboard HTTP server |
+| `A2A_BRIDGE_HERMES_AUDIT` | unset | Read-only override for Hermes' `a2a_audit.jsonl` |
+| `HERMES_HOME` | unset | When set and no override is present, reads `$HERMES_HOME/a2a_audit.jsonl` |
 
 Visit `http://<this-machine's-IP>:9100` from any device on the same local
 network. The dashboard is read-only — it never sends messages to agents.
@@ -146,6 +149,30 @@ Task activity is live across every bridge process that has
 `A2A_BRIDGE_ACTIVITY_DB` file and the dashboard process polls it continuously.
 A bridge process without the flag set keeps its activity in memory only and
 is invisible to the dashboard (today's default, zero overhead).
+
+### Copilot A2A server
+
+Run the consolidated Copilot server (requires an authenticated `copilot` CLI):
+
+```sh
+copilot-a2a-agent --port 9002 --cwd /path/to/default/repo
+```
+
+It binds only to `127.0.0.1` because it runs Copilot with `--allow-all-tools`.
+Incoming activity uses the same opt-in shared SQLite store and is shown with
+`source` and `destination` fields in the dashboard. To run it at login on
+macOS, substitute `__REPO__`, `__HOME__`, and `__DEFAULT_CWD__` in
+`launchd/com.example.copilot-a2a-agent.plist`, then bootstrap it with
+`launchctl bootstrap gui/$(id -u) <plist-path>`.
+
+The dashboard also polls Hermes' native audit file without modifying Hermes:
+`A2A_BRIDGE_HERMES_AUDIT`, then `$HERMES_HOME/a2a_audit.jsonl`, then
+`~/.hermes/a2a_audit.jsonl`. It reads only a bounded tail, skips malformed or
+in-progress JSONL rows, exposes outbound calls as `hermes:<task_id>` with
+`state: "recorded"`, and truncates/redacts credential-like summary fragments.
+An audit record proves a call was recorded, not that its remote task completed;
+inbound Hermes records and full request/response contents are intentionally not
+shown.
 
 A bridge never fails an A2A tool call because of the dashboard. If a shared
 store write fails (for example two bridges contending for the SQLite file),

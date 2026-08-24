@@ -119,6 +119,66 @@ async def test_codex_executor_sends_heartbeats_until_completion(monkeypatch):
     assert [state for state, _ in calls] == ["working", "working", "completed"]
 
 
+async def test_codex_executor_records_received_and_completed_activity(monkeypatch):
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self):
+            return b"done", b""
+
+        async def wait(self):
+            return None
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+    class FakeUpdater:
+        def __init__(self, *args):
+            pass
+
+        def new_agent_message(self, parts):
+            return parts
+
+        async def start_work(self, message=None):
+            pass
+
+        async def complete(self, message):
+            pass
+
+        async def failed(self, message):
+            pass
+
+    class Writer:
+        default_source = "remote"
+
+        def __init__(self):
+            self.calls = []
+
+        def source_for(self, context):
+            return "copilot"
+
+        def record(self, task_id, **kwargs):
+            self.calls.append((task_id, kwargs["state"], kwargs["source"]))
+
+    async def create_process(*args, **kwargs):
+        return FakeProcess()
+
+    monkeypatch.setattr(codex_module, "TaskUpdater", FakeUpdater)
+    monkeypatch.setattr(codex_module.asyncio, "create_subprocess_exec", create_process)
+    writer = Writer()
+    context = SimpleNamespace(
+        current_task=Task(id="t1", context_id="c1"),
+        message=Message(role=Role.ROLE_USER, parts=[Part(text="hi")]),
+    )
+
+    await codex_module.CodexExecutor(activity_writer=writer).execute(context, SimpleNamespace())
+
+    assert writer.calls == [("t1", "working", "copilot"), ("t1", "completed", "copilot")]
+
+
 def test_codex_co_developer_publishes_an_a2a_agent_card():
     port = _free_port()
     process = subprocess.Popen(

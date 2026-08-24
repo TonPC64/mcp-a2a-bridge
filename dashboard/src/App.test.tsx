@@ -43,7 +43,7 @@ describe("App", () => {
     });
 
     expect(screen.getByText("A2A Bridge Dashboard")).toBeInTheDocument();
-    expect(screen.getAllByText("planner")).toHaveLength(2);
+    expect(screen.getAllByText("planner")).toHaveLength(3);
     expect(screen.getByText("done")).toBeInTheDocument();
   });
 

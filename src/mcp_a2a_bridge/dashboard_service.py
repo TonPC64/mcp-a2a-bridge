@@ -13,6 +13,7 @@ import os
 import sys
 import traceback
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Protocol
 
 import uvicorn
@@ -21,6 +22,11 @@ from mcp_a2a_bridge.activity import ActivityLog, TaskActivity
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore, resolve_activity_db_path
 from mcp_a2a_bridge.config import ConfigError, load_registry, resolve_config_path
 from mcp_a2a_bridge.dashboard import build_dashboard_app
+from mcp_a2a_bridge.hermes_audit import (
+    list_hermes_audit_entries,
+    merge_task_activity,
+    resolve_hermes_audit_path,
+)
 from mcp_a2a_bridge.registry import AgentRegistry
 
 DEFAULT_DASHBOARD_HOST = "0.0.0.0"
@@ -43,6 +49,8 @@ def build_poll_task(
     store: SQLiteActivityStore,
     activity: ActivityLog,
     interval_s: float = DEFAULT_POLL_INTERVAL_S,
+    hermes_audit_path: Path | None = None,
+    agent_aliases: dict[str, str] | None = None,
 ) -> Callable[[], Awaitable[None]]:
     """Return a coroutine that does ONE poll-diff-publish cycle.
 
@@ -51,6 +59,7 @@ def build_poll_task(
     tests call ``poll_once()`` directly without the sleep.
     """
     last_snapshot: dict | None = None
+    hermes_audit_path = hermes_audit_path or resolve_hermes_audit_path()
 
     async def poll_once() -> None:
         nonlocal last_snapshot
@@ -61,7 +70,9 @@ def build_poll_task(
         # BaseException (not Exception) in Python 3.8+, so it still
         # propagates for shutdown and is not swallowed here.
         try:
-            rows = store.list()
+            rows = merge_task_activity(
+                store.list(), list_hermes_audit_entries(hermes_audit_path, agent_aliases)
+            )
             snapshot = {"tasks": rows}
             if snapshot == last_snapshot:
                 return
@@ -76,6 +87,15 @@ def build_poll_task(
                     text=row["text"],
                     created_at=row["created_at"],
                     updated_at=row["updated_at"],
+                    source=row.get(
+                        "source",
+                        row["agent"]
+                        if row["kind"] == "a2a_receive"
+                        else "hermes" if row["kind"] == "a2a_call" else "mcp-a2a-bridge",
+                    ),
+                    destination=row.get(
+                        "destination", "hermes" if row["kind"] == "a2a_receive" else row["agent"]
+                    ),
                 )
                 for row in rows
             ]
@@ -127,7 +147,13 @@ def main() -> None:
     port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
 
     async def _serve() -> None:
-        poll_once = build_poll_task(store, activity)
+        aliases = {registry.entry(name).url: name for name in registry.names()}
+        poll_once = build_poll_task(
+            store,
+            activity,
+            hermes_audit_path=resolve_hermes_audit_path(),
+            agent_aliases=aliases,
+        )
         server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
         await asyncio.gather(
             _run_poll_loop(poll_once, DEFAULT_POLL_INTERVAL_S, server),

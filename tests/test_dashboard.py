@@ -9,8 +9,11 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from mcp_a2a_bridge.activity import ActivityLog
+from mcp_a2a_bridge.activity_store import SQLiteActivityStore
+from mcp_a2a_bridge.activity_writer import ActivityWriter
 from mcp_a2a_bridge.config import AgentEntry, Registry
 from mcp_a2a_bridge.dashboard import build_dashboard_app
+from mcp_a2a_bridge.dashboard_service import build_poll_task
 from mcp_a2a_bridge.registry import AgentRegistry
 
 
@@ -64,6 +67,59 @@ def test_get_tasks_returns_recorded_activity():
     assert tasks[0]["kind"] == "send_message"
     assert tasks[0]["state"] == "completed"
     assert tasks[0]["text"] == "done"
+
+
+def test_get_tasks_identifies_inbound_source_and_handler(tmp_path):
+    store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
+    ActivityWriter("codex-co-developer", store).record(
+        "task-1", source="copilot", state="working", text="received"
+    )
+    activity = ActivityLog()
+    asyncio.run(build_poll_task(store, activity, hermes_audit_path=tmp_path / "missing")())
+
+    task = TestClient(build_dashboard_app(fake_registry(), activity)).get("/api/tasks").json()["tasks"][0]
+
+    assert task["source"] == "copilot"
+    assert task["destination"] == "codex-co-developer"
+
+
+def test_get_tasks_includes_hermes_audit_activity(tmp_path):
+    audit = tmp_path / "a2a_audit.jsonl"
+    audit.write_text(
+        json.dumps(
+            {
+                "ts": 123.0,
+                "direction": "outbound",
+                "peer": "codex",
+                "task_id": "task-test",
+                "summary": "Inspect the dashboard",
+            }
+        )
+        + "\n"
+    )
+    activity = ActivityLog()
+    asyncio.run(
+        build_poll_task(
+            SQLiteActivityStore(tmp_path / "activity.sqlite3"), activity, hermes_audit_path=audit
+        )()
+    )
+
+    response = TestClient(build_dashboard_app(fake_registry(), activity)).get("/api/tasks")
+
+    assert response.status_code == 200
+    assert response.json()["tasks"] == [
+        {
+            "id": "hermes:task-test",
+            "agent": "codex",
+            "kind": "a2a_call",
+            "state": "recorded",
+            "text": "Inspect the dashboard",
+            "created_at": 123.0,
+            "updated_at": 123.0,
+            "source": "hermes",
+            "destination": "codex",
+        }
+    ]
 
 
 def test_root_without_build_returns_helpful_404(tmp_path):

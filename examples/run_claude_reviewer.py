@@ -20,6 +20,7 @@ from a2a.server.routes import (
 )
 from a2a.server.tasks import TaskUpdater
 from mcp_a2a_bridge.sqlite_task_store import SQLiteTaskStore
+from mcp_a2a_bridge.activity_writer import ActivityWriter, build_activity_writer
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from fastapi import FastAPI
 
@@ -69,6 +70,17 @@ def build_card(port: int = PORT) -> AgentCard:
 
 
 class ClaudeReviewerExecutor(AgentExecutor):
+    def __init__(self, activity_writer: ActivityWriter | None = None) -> None:
+        self._activity_writer = activity_writer if activity_writer is not None else build_activity_writer("claude-reviewer")
+
+    def _record_activity(self, task_id: str, source: str, state: str, text: str) -> None:
+        if self._activity_writer is None:
+            return
+        try:
+            self._activity_writer.record(task_id, source=source, state=state, text=text)
+        except Exception:
+            pass
+
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         task = context.current_task
         if task is None:
@@ -77,6 +89,8 @@ class ClaudeReviewerExecutor(AgentExecutor):
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.start_work()
+        source = self._activity_writer.source_for(context) if self._activity_writer else "remote"
+        self._record_activity(task.id, source, "working", "Task received.")
 
         prompt = get_message_text(context.message)
         command = [
@@ -140,6 +154,7 @@ class ClaudeReviewerExecutor(AgentExecutor):
                             [Part(text="Claude review exceeded the 15-minute timeout.")]
                         )
                     )
+                    self._record_activity(task.id, source, "failed", "Claude review exceeded the timeout.")
                     return
 
                 try:
@@ -153,6 +168,7 @@ class ClaudeReviewerExecutor(AgentExecutor):
                             [Part(text="Claude review is still in progress.")]
                         )
                     )
+                    self._record_activity(task.id, source, "working", "Claude review is still in progress.")
 
             stdout, stderr = await communicate_task
             assert process.returncode is not None
@@ -160,8 +176,10 @@ class ClaudeReviewerExecutor(AgentExecutor):
             event = updater.new_agent_message([Part(text=reply)])
             if process.returncode == 0:
                 await updater.complete(event)
+                self._record_activity(task.id, source, "completed", reply)
             else:
                 await updater.failed(event)
+                self._record_activity(task.id, source, "failed", reply)
         except asyncio.CancelledError:
             if process is not None and process.returncode is None:
                 process.kill()
@@ -171,6 +189,7 @@ class ClaudeReviewerExecutor(AgentExecutor):
             await updater.failed(
                 updater.new_agent_message([Part(text=f"Claude reviewer failed: {exc}")])
             )
+            self._record_activity(task.id, source, "failed", f"Claude reviewer failed: {exc}")
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         return None

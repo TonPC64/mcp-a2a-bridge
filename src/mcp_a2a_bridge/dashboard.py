@@ -79,6 +79,8 @@ def build_dashboard_app(
                     "text": e.text,
                     "created_at": e.created_at,
                     "updated_at": e.updated_at,
+                    **({"source": e.source} if e.source else {}),
+                    **({"destination": e.destination} if e.destination else {}),
                 }
                 for e in entries
             ]

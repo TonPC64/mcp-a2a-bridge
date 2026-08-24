@@ -1,5 +1,12 @@
 # Shared, Multi-Process Dashboard Implementation Plan
 
+> **Status (2026-08-25): Complete (implementation).** Repository commits
+> `600fefc` through `ea253f1` implement Tasks 1-5; subsequent reliability
+> fixes are `8ce2439`, `e7de327`, and `c7b6bae`. Current focused dashboard
+> verification passes (55 tests); frontend tests/build pass. Historical
+> RED-phase steps remain unchecked, and the cross-device Task 6 check remains
+> manual because this session cannot test from a second LAN device.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the dashboard a single standalone process that shows live task activity from every `mcp-a2a-bridge` process on the machine, reachable from any device on the local network.
@@ -145,7 +152,7 @@ def test_resolve_activity_db_path_defaults_when_unset(monkeypatch):
 Run: `.venv/bin/pytest tests/test_activity_store.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'mcp_a2a_bridge.activity_store'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 ```python
 # src/mcp_a2a_bridge/activity_store.py
@@ -259,12 +266,12 @@ class SQLiteActivityStore:
         return dict(zip(keys, row))
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_activity_store.py -v`
 Expected: PASS (7 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/mcp_a2a_bridge/activity_store.py tests/test_activity_store.py
@@ -321,7 +328,7 @@ async def test_record_without_store_touches_no_sqlite_file(tmp_path):
 Run: `.venv/bin/pytest tests/test_activity.py -v -k store`
 Expected: FAIL with `TypeError: ActivityLog.__init__() got an unexpected keyword argument 'store'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 Modify `src/mcp_a2a_bridge/activity.py`:
 
@@ -358,12 +365,12 @@ from mcp_a2a_bridge.activity_store import SQLiteActivityStore
 
 (The `store.upsert()` call is a plain synchronous SQLite call — same as the existing lock-held synchronous work in this method, so it does not change the "never await inside the critical section" invariant documented on `self._lock`.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_activity.py -v`
 Expected: PASS (all tests, including the two new ones)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/mcp_a2a_bridge/activity.py tests/test_activity.py
@@ -447,7 +454,7 @@ class SQLiteActivityStoreStub:
 Run: `.venv/bin/pytest tests/test_dashboard_service.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'mcp_a2a_bridge.dashboard_service'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 First, add `replace_all` to `src/mcp_a2a_bridge/activity.py` (same file touched in Task 2):
 
@@ -576,12 +583,12 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_activity.py tests/test_dashboard_service.py -v`
 Expected: PASS (all tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/mcp_a2a_bridge/activity.py src/mcp_a2a_bridge/dashboard_service.py tests/test_dashboard_service.py
@@ -636,7 +643,7 @@ def test_build_activity_log_is_in_memory_when_disabled(monkeypatch, tmp_path):
 Run: `.venv/bin/pytest tests/test_server.py -v -k build_activity_log`
 Expected: FAIL with `ImportError: cannot import name 'build_activity_log' from 'mcp_a2a_bridge.server'`
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 In `src/mcp_a2a_bridge/server.py`:
 
@@ -676,7 +683,7 @@ def main() -> None:
     build_server(registry, activity).run(transport="stdio")
 ```
 
-- [ ] **Step 4: Delete the obsolete test file and run the suite**
+- [x] **Step 4: Delete the obsolete test file and run the suite**
 
 ```bash
 rm tests/test_dashboard_startup.py
@@ -690,7 +697,7 @@ Expected: PASS (all tests)
 Run: `.venv/bin/pytest -v`
 Expected: PASS (all tests; `test_dashboard.py`'s existing SSE contract tests still pass unchanged since `build_dashboard_app` itself was not touched)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/mcp_a2a_bridge/server.py tests/test_server.py
@@ -710,7 +717,7 @@ git commit -m "feat(dashboard): remove embedded per-bridge dashboard, use shared
 - Consumes: `mcp_a2a_bridge.dashboard_service:main` (Task 3).
 - Produces: a `mcp-a2a-bridge-dashboard` executable after `pip install`/`uv sync`.
 
-- [ ] **Step 1: Add the console script**
+- [x] **Step 1: Add the console script**
 
 In `pyproject.toml`, under `[project.scripts]`:
 
@@ -725,7 +732,7 @@ mcp-a2a-bridge-dashboard = "mcp_a2a_bridge.dashboard_service:main"
 Run: `cd /Users/chanwit/WorkSpace/mcp-a2a-bridge && uv build --wheel --out-dir /tmp/mcp-a2a-verify && unzip -p /tmp/mcp-a2a-verify/*.whl mcp_a2a_bridge-0.1.0.dist-info/entry_points.txt`
 Expected: output includes `mcp-a2a-bridge-dashboard = mcp_a2a_bridge.dashboard_service:main`
 
-- [ ] **Step 3: Replace the README "Dashboard" section**
+- [x] **Step 3: Replace the README "Dashboard" section**
 
 Replace the section from `## Dashboard` up to (not including) `## Development` in `README.md` with:
 
@@ -775,7 +782,7 @@ A bridge process without the flag set keeps its activity in memory only and
 is invisible to the dashboard (today's default, zero overhead).
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add pyproject.toml README.md

@@ -1,5 +1,10 @@
 # Agent Dashboard Implementation Plan
 
+> **Status (2026-08-25): Superseded.** The embedded, `127.0.0.1` dashboard
+> described here was replaced by the standalone shared-dashboard design in
+> `2026-08-24-shared-dashboard.md` (see commit `3000ee1`). Keep this plan as
+> historical context; do not backfill its unrecorded RED-phase checkboxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an opt-in, read-only web dashboard showing configured A2A agents' status/skills and a rolling history of tasks the bridge has sent/polled/canceled.

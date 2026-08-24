@@ -2,6 +2,7 @@ import asyncio
 import threading
 
 from mcp_a2a_bridge.activity import ActivityLog, TEXT_PREVIEW_LIMIT
+from mcp_a2a_bridge.activity_store import SQLiteActivityStore
 
 
 async def test_record_without_task_id_generates_one():
@@ -141,3 +142,27 @@ def test_record_blocks_across_threads_while_held_and_unblocks_promptly_on_releas
 
     entries = asyncio.run(log.list())
     assert [e.id for e in entries] == ["from-worker-thread"]
+
+async def test_record_writes_through_to_store_when_configured(tmp_path):
+    store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
+    log = ActivityLog(store=store)
+
+    await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+
+    stored = store.get("t1")
+    assert stored is not None
+    assert stored["agent"] == "planner"
+    assert stored["state"] == "working"
+    assert stored["text"] == "hi"
+
+
+async def test_record_without_store_touches_no_sqlite_file(tmp_path):
+    log = ActivityLog()  # store=None, today's default
+
+    await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+
+    assert list(tmp_path.iterdir()) == []

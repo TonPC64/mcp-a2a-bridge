@@ -11,6 +11,7 @@ from queue import Queue
 from typing import Any
 
 from mcp_a2a_bridge.snapshots import SnapshotSubscribers
+from mcp_a2a_bridge.activity_store import SQLiteActivityStore
 
 TEXT_PREVIEW_LIMIT = 500
 
@@ -32,7 +33,7 @@ class ActivityLog:
     Mirrors the OrderedDict LRU shape of TTLTaskStore for consistency.
     """
 
-    def __init__(self, maxsize: int = 500) -> None:
+    def __init__(self, maxsize: int = 500, store: SQLiteActivityStore | None = None) -> None:
         self._maxsize = maxsize
         self._entries: OrderedDict[str, TaskActivity] = OrderedDict()
         # A plain threading.Lock is used (not asyncio.Lock) because record()/list()
@@ -43,6 +44,7 @@ class ActivityLog:
         # primary stdio bridge. threading.Lock works safely across threads.
         self._lock = threading.Lock()
         self._subscribers = SnapshotSubscribers()
+        self._store = store
 
     async def record(
         self,
@@ -83,6 +85,18 @@ class ActivityLog:
                 updated_at=now,
             )
             self._entries[key] = entry
+            if self._store is not None:
+                self._store.upsert(
+                    {
+                        "id": entry.id,
+                        "agent": entry.agent,
+                        "kind": entry.kind,
+                        "state": entry.state,
+                        "text": entry.text,
+                        "created_at": entry.created_at,
+                        "updated_at": entry.updated_at,
+                    }
+                )
             snapshot = self._snapshot_locked()
             self._subscribers.publish(snapshot)
             return entry

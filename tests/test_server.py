@@ -10,6 +10,8 @@ from mcp_a2a_bridge.client import A2AResult
 from mcp_a2a_bridge.config import AgentEntry, Registry
 from mcp_a2a_bridge.registry import AgentRegistry
 from mcp_a2a_bridge.server import build_server
+from mcp_a2a_bridge.activity_store import SQLiteActivityStore
+from mcp_a2a_bridge.server import build_activity_log
 
 EXPECTED_TOOLS = {
     "a2a_list_agents",
@@ -205,3 +207,24 @@ async def test_cancel_task_records_into_activity_log(monkeypatch):
     assert entries[0].id == "task-3"
     assert entries[0].kind == "cancel_task"
     assert entries[0].state == "canceled"
+
+
+def test_build_activity_log_uses_sqlite_store_when_enabled(monkeypatch, tmp_path):
+    db_path = tmp_path / "activity.sqlite3"
+    monkeypatch.setenv("A2A_BRIDGE_DASHBOARD", "1")
+    monkeypatch.setenv("A2A_BRIDGE_ACTIVITY_DB", str(db_path))
+
+    log = build_activity_log()
+
+    assert isinstance(log._store, SQLiteActivityStore)
+    assert db_path.parent.is_dir()  # SQLiteActivityStore creates parent dirs eagerly
+
+
+def test_build_activity_log_is_in_memory_when_disabled(monkeypatch, tmp_path):
+    monkeypatch.delenv("A2A_BRIDGE_DASHBOARD", raising=False)
+    monkeypatch.setenv("A2A_BRIDGE_ACTIVITY_DB", str(tmp_path / "should-not-be-created.sqlite3"))
+
+    log = build_activity_log()
+
+    assert log._store is None
+    assert list(tmp_path.iterdir()) == []

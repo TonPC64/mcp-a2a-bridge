@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
 import uuid
-from dataclasses import dataclass
 
-import uvicorn
 from mcp.server.mcpserver import MCPServer
 
 from mcp_a2a_bridge import client
 from mcp_a2a_bridge.activity import ActivityLog
+from mcp_a2a_bridge.activity_store import SQLiteActivityStore, resolve_activity_db_path
 from mcp_a2a_bridge.config import ConfigError, load_registry, resolve_config_path
-from mcp_a2a_bridge.dashboard import build_dashboard_app
 from mcp_a2a_bridge.registry import AgentRegistry, resolved_agent_summary
 
 INSTRUCTIONS = (
@@ -26,48 +23,20 @@ INSTRUCTIONS = (
     "same task_id."
 )
 
-DEFAULT_DASHBOARD_PORT = 9100
-
-
-@dataclass
-class DashboardHandle:
-    thread: threading.Thread
-    server: uvicorn.Server
-
 
 def _dashboard_enabled() -> bool:
     return os.environ.get("A2A_BRIDGE_DASHBOARD", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def start_dashboard(registry: AgentRegistry, activity: ActivityLog) -> DashboardHandle | None:
-    """Start the dashboard HTTP server on a daemon thread. Returns None if disabled.
-
-    Any startup failure (e.g. the port is already in use) is logged to
-    stderr and swallowed: the dashboard must never prevent the stdio MCP
-    server from running.
+def build_activity_log() -> ActivityLog:
+    """Build the bridge's ActivityLog, backed by the shared SQLite store when
+    A2A_BRIDGE_DASHBOARD=1 so the standalone mcp-a2a-bridge-dashboard process
+    (see dashboard_service.py) can see this process's activity. Unset (the
+    default) keeps activity in-memory only -- no SQLite file is touched.
     """
     if not _dashboard_enabled():
-        return None
-
-    try:
-        port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
-        app = build_dashboard_app(registry, activity)
-        server = uvicorn.Server(
-            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
-        )
-    except Exception as exc:
-        print(f"mcp-a2a-bridge: dashboard failed to start: {exc}", file=sys.stderr)
-        return None
-
-    def run() -> None:
-        try:
-            server.run()
-        except Exception as exc:
-            print(f"mcp-a2a-bridge: dashboard failed to start: {exc}", file=sys.stderr)
-
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
-    return DashboardHandle(thread=thread, server=server)
+        return ActivityLog()
+    return ActivityLog(store=SQLiteActivityStore(resolve_activity_db_path()))
 
 
 def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -> MCPServer:
@@ -224,9 +193,7 @@ def main() -> None:
         print(f"mcp-a2a-bridge: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    activity = ActivityLog()
-    start_dashboard(registry, activity)
-
+    activity = build_activity_log()
     build_server(registry, activity).run(transport="stdio")
 
 

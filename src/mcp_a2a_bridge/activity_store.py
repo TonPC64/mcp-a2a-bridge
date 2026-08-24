@@ -51,7 +51,14 @@ class SQLiteActivityStore:
             connection.commit()
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._path)
+        connection = sqlite3.connect(self._path)
+        # busy_timeout is a per-connection setting (unlike journal_mode=WAL,
+        # which persists in the DB file once set) and Python's sqlite3
+        # default is ~5s, which would stall the caller for a full 5s before
+        # raising under write contention -- now that a failure is survivable
+        # (see ActivityLog.record()), fail fast instead.
+        connection.execute("PRAGMA busy_timeout=1000")
+        return connection
 
     def _evict(self, connection: sqlite3.Connection) -> None:
         connection.execute(

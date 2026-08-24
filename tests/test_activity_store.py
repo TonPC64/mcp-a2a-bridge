@@ -99,3 +99,14 @@ def test_delete_of_nonexistent_id_is_a_harmless_noop(tmp_path):
     store.delete("does-not-exist")
 
     assert [e["id"] for e in store.list()] == ["t1"]
+
+
+def test_connections_have_a_short_busy_timeout(tmp_path):
+    """A contended write must fail fast (not wait out Python sqlite3's ~5s
+    default) now that ActivityLog.record() survives store failures."""
+    store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
+
+    with store._connect() as connection:
+        (busy_timeout_ms,) = connection.execute("PRAGMA busy_timeout").fetchone()
+
+    assert busy_timeout_ms == 1000

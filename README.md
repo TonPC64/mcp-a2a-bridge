@@ -147,6 +147,11 @@ Task activity is live across every bridge process that has
 A bridge process without the flag set keeps its activity in memory only and
 is invisible to the dashboard (today's default, zero overhead).
 
+Upgrading from an older version: bridges used to serve their own embedded
+per-bridge dashboard over HTTP; they no longer do, so if you previously
+visited a per-bridge dashboard URL, run `mcp-a2a-bridge-dashboard` once
+instead.
+
 ## Development
 
 ```bash

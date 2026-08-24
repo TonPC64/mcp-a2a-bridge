@@ -29,7 +29,7 @@ def test_upsert_then_get_round_trips(tmp_path):
 def test_upsert_same_id_replaces_state_but_keeps_created_at(tmp_path):
     store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
     store.upsert(_entry("t1", 100.0, state="working"))
-    store.upsert(_entry("t1", 200.0, state="completed", created_at=100.0))
+    store.upsert(_entry("t1", 200.0, state="completed", created_at=999.0))
 
     got = store.get("t1")
 

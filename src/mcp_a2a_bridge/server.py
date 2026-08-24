@@ -36,7 +36,15 @@ def build_activity_log() -> ActivityLog:
     """
     if not _dashboard_enabled():
         return ActivityLog()
-    return ActivityLog(store=SQLiteActivityStore(resolve_activity_db_path()))
+    try:
+        return ActivityLog(store=SQLiteActivityStore(resolve_activity_db_path()))
+    except Exception as exc:
+        print(
+            f"mcp-a2a-bridge: dashboard activity persistence disabled -- "
+            f"could not open activity store: {exc}",
+            file=sys.stderr,
+        )
+        return ActivityLog()
 
 
 def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -> MCPServer:

@@ -228,3 +228,24 @@ def test_build_activity_log_is_in_memory_when_disabled(monkeypatch, tmp_path):
 
     assert log._store is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_build_activity_log_degrades_to_in_memory_when_store_unwritable(monkeypatch, tmp_path, capsys):
+    readonly_dir = tmp_path / "readonly"
+    readonly_dir.mkdir()
+    readonly_dir.chmod(0o500)  # read+execute, no write -- blocks mkdir of a child dir
+    unwritable_db_path = readonly_dir / "nested" / "activity.sqlite3"
+
+    monkeypatch.setenv("A2A_BRIDGE_DASHBOARD", "1")
+    monkeypatch.setenv("A2A_BRIDGE_ACTIVITY_DB", str(unwritable_db_path))
+
+    try:
+        log = build_activity_log()
+
+        assert log._store is None
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err.strip() != ""
+    finally:
+        readonly_dir.chmod(0o700)

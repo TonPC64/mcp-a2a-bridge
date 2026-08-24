@@ -105,11 +105,14 @@ An agent that returns `state: "input_required"` is answered by calling
 
 ## Dashboard
 
-An optional read-only web dashboard shows configured agents' status/skills
-and a rolling history of tasks the bridge has sent, polled, or canceled. It
-uses Server-Sent Events (SSE) to update both views live: `/api/agents/events`
-emits `agents` events with `{ "agents": [...] }`, and `/api/tasks/events`
-emits `tasks` events with `{ "tasks": [...] }`.
+A standalone, read-only web dashboard shows configured agents' status/skills
+and a live, rolling history of task activity from *every* `mcp-a2a-bridge`
+process on the machine — Copilot's, Hermes', or any other MCP host's. It runs
+as its own long-lived process, independent of any bridge, so multiple devices
+on the same local network can view it at once. It uses Server-Sent Events
+(SSE) to push updates: `/api/agents/events` emits `agents` events with
+`{ "agents": [...] }`, and `/api/tasks/events` emits `tasks` events with
+`{ "tasks": [...] }`.
 
 Build the frontend once:
 
@@ -117,22 +120,32 @@ Build the frontend once:
     npm install
     npm run build
 
-Then enable the dashboard when running the bridge:
+Start the dashboard (once, independent of any bridge):
+
+    mcp-a2a-bridge-dashboard
+
+Then enable each bridge process to report into the shared activity store:
 
     A2A_BRIDGE_DASHBOARD=1 mcp-a2a-bridge
 
 | Env var | Default | Purpose |
 |---|---|---|
-| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` to start the dashboard HTTP server |
+| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` on a *bridge* process to persist its activity into the shared SQLite store |
+| `A2A_BRIDGE_ACTIVITY_DB` | `~/.config/a2a-bridge/activity.sqlite3` | Path to the shared activity store, read by the dashboard process and written by every enabled bridge process |
+| `A2A_BRIDGE_DASHBOARD_HOST` | `0.0.0.0` | Host the dashboard HTTP server binds to |
 | `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Port for the dashboard HTTP server |
 
-Visit `http://127.0.0.1:9100` (or your configured port). The dashboard is
-read-only — it does not send messages to agents.
+Visit `http://<this-machine's-IP>:9100` from any device on the same local
+network. The dashboard is read-only — it never sends messages to agents.
 
-Task history is live only when this dashboard is started by the same
-`mcp-a2a-bridge` process (via `A2A_BRIDGE_DASHBOARD=1`). It uses that process's
-in-memory activity log; a separately started dashboard, including one on
-`:9100`, cannot display activity from another bridge process.
+There is no authentication: this is a local-network-trust tool, like a Vite
+dev server. Do not expose it beyond a trusted LAN.
+
+Task activity is live across every bridge process that has
+`A2A_BRIDGE_DASHBOARD=1` set, because they all write into the same
+`A2A_BRIDGE_ACTIVITY_DB` file and the dashboard process polls it continuously.
+A bridge process without the flag set keeps its activity in memory only and
+is invisible to the dashboard (today's default, zero overhead).
 
 ## Development
 

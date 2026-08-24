@@ -13,6 +13,7 @@ dependencies = [
 
 [project.scripts]
 mcp-a2a-bridge = "mcp_a2a_bridge.server:main"
+mcp-a2a-bridge-dashboard = "mcp_a2a_bridge.dashboard_service:main"
 
 [project.optional-dependencies]
 dev = [

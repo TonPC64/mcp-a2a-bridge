@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import sqlite3
 
 from mcp_a2a_bridge.activity import ActivityLog, TEXT_PREVIEW_LIMIT
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore
@@ -197,3 +198,123 @@ async def test_record_with_replaces_task_id_removes_placeholder_row_from_store(t
 
     assert store.get("placeholder-1") is None
     assert [e["id"] for e in store.list()] == ["real-task-1"]
+
+
+class _UpsertFailingStore:
+    """Stub store whose upsert() always raises, to simulate a contended/locked
+    shared SQLite file (e.g. sqlite3.OperationalError: database is locked)."""
+
+    def __init__(self) -> None:
+        self.upsert_calls = 0
+        self.delete_calls = 0
+
+    def upsert(self, entry: dict) -> None:
+        self.upsert_calls += 1
+        raise sqlite3.OperationalError("database is locked")
+
+    def delete(self, entry_id: str) -> None:
+        self.delete_calls += 1
+        raise sqlite3.OperationalError("database is locked")
+
+
+class _DeleteFailingStore:
+    """Stub store whose upsert() succeeds but delete() always raises, to
+    exercise the replaces_task_id reconciliation path independently."""
+
+    def __init__(self) -> None:
+        self.upsert_calls = 0
+        self.delete_calls = 0
+
+    def upsert(self, entry: dict) -> None:
+        self.upsert_calls += 1
+
+    def delete(self, entry_id: str) -> None:
+        self.delete_calls += 1
+        raise sqlite3.OperationalError("database is locked")
+
+
+async def test_record_survives_store_upsert_failure_and_still_records_and_publishes():
+    """A store.upsert() failure (e.g. contended SQLite file) must not propagate
+    out of record(): the in-memory entry must still be stored and published."""
+    store = _UpsertFailingStore()
+    log = ActivityLog(store=store)
+    subscriber = log.subscribe()
+
+    entry = await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+
+    assert entry.id == "t1"
+    entries = await log.list()
+    assert [e.id for e in entries] == ["t1"]
+    published = subscriber.get(timeout=1)
+    assert published["tasks"][0]["id"] == "t1"
+    log.unsubscribe(subscriber)
+
+
+async def test_record_survives_store_delete_failure_on_replaces_task_id_path():
+    """A store.delete() failure during replaces_task_id reconciliation (the
+    common path -- server.py passes replaces_task_id on every send_message made
+    without an explicit task id) must not propagate out of record()."""
+    store = _DeleteFailingStore()
+    log = ActivityLog(store=store)
+
+    await log.record(
+        task_id="placeholder-1",
+        agent="planner",
+        kind="send_message",
+        state="working",
+        text="sending",
+    )
+    entry = await log.record(
+        task_id="real-task-1",
+        agent="planner",
+        kind="send_message",
+        state="working",
+        text="sending",
+        replaces_task_id="placeholder-1",
+    )
+
+    assert entry.id == "real-task-1"
+    entries = await log.list()
+    assert [e.id for e in entries] == ["real-task-1"]
+
+
+async def test_record_disables_store_after_a_failure_so_later_calls_skip_it():
+    """After one store write failure, the store must be disabled for the rest
+    of the process lifetime so repeated failures don't add busy-timeout
+    latency to every subsequent A2A tool call."""
+    store = _UpsertFailingStore()
+    log = ActivityLog(store=store)
+
+    await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+    assert store.upsert_calls == 1
+
+    await log.record(
+        task_id="t2", agent="planner", kind="send_message", state="working", text="hi again"
+    )
+
+    assert store.upsert_calls == 1  # no further attempt after the store was disabled
+    assert log._store is None
+
+
+async def test_record_logs_store_disabled_warning_exactly_once(capsys):
+    """The stderr warning about disabling shared-store writes must be emitted
+    once, not on every subsequent record() call."""
+    store = _UpsertFailingStore()
+    log = ActivityLog(store=store)
+
+    await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+    await log.record(
+        task_id="t2", agent="planner", kind="send_message", state="working", text="hi again"
+    )
+    await log.record(
+        task_id="t3", agent="planner", kind="send_message", state="working", text="hi again"
+    )
+
+    captured = capsys.readouterr()
+    assert captured.err.count("disabl") == 1

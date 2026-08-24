@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
 import uuid
@@ -86,19 +87,34 @@ class ActivityLog:
             )
             self._entries[key] = entry
             if self._store is not None:
-                self._store.upsert(
-                    {
-                        "id": entry.id,
-                        "agent": entry.agent,
-                        "kind": entry.kind,
-                        "state": entry.state,
-                        "text": entry.text,
-                        "created_at": entry.created_at,
-                        "updated_at": entry.updated_at,
-                    }
-                )
-                if replaced is not None:
-                    self._store.delete(replaces_task_id)
+                try:
+                    self._store.upsert(
+                        {
+                            "id": entry.id,
+                            "agent": entry.agent,
+                            "kind": entry.kind,
+                            "state": entry.state,
+                            "text": entry.text,
+                            "created_at": entry.created_at,
+                            "updated_at": entry.updated_at,
+                        }
+                    )
+                    if replaced is not None:
+                        self._store.delete(replaces_task_id)
+                except Exception as exc:
+                    # A crashed/slow/misconfigured shared store must never fail
+                    # or slow down the real A2A tool call (spec "Error
+                    # handling"). Once a write fails, disable the store for the
+                    # rest of this process's lifetime rather than retry it on
+                    # every subsequent record(): a contended SQLite file keeps
+                    # failing the same way, and retrying would re-pay the
+                    # busy_timeout cost (finding #2) on every A2A tool call.
+                    print(
+                        "mcp-a2a-bridge: shared activity store write failed, "
+                        f"disabling shared-store writes for this process: {exc}",
+                        file=sys.stderr,
+                    )
+                    self._store = None
             snapshot = self._snapshot_locked()
             self._subscribers.publish(snapshot)
             return entry

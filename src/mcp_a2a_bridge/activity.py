@@ -107,6 +107,19 @@ class ActivityLog:
         with self._lock:
             return list(reversed(self._entries.values()))
 
+    async def replace_all(self, entries: list[TaskActivity]) -> None:
+        """Atomically swap the in-memory view and publish one snapshot.
+
+        Used by the standalone dashboard service's poll loop (see
+        dashboard_service.py), which reads the shared SQLiteActivityStore and
+        pushes the result here instead of calling record() per entry -- one
+        publish per poll tick, not one per row.
+        """
+        with self._lock:
+            self._entries = OrderedDict((entry.id, entry) for entry in reversed(entries))
+            snapshot = self._snapshot_locked()
+            self._subscribers.publish(snapshot)
+
     def subscribe(self) -> Queue[dict[str, Any]]:
         return self._subscribers.subscribe()
 

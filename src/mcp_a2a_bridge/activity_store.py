@@ -102,6 +102,11 @@ class SQLiteActivityStore:
             ).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
+    def delete(self, entry_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute("DELETE FROM activity WHERE id = ?", (entry_id,))
+            connection.commit()
+
     @staticmethod
     def _row_to_dict(row: tuple) -> dict:
         keys = ("id", "agent", "kind", "state", "text", "created_at", "updated_at")

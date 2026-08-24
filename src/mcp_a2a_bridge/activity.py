@@ -97,6 +97,8 @@ class ActivityLog:
                         "updated_at": entry.updated_at,
                     }
                 )
+                if replaced is not None:
+                    self._store.delete(replaces_task_id)
             snapshot = self._snapshot_locked()
             self._subscribers.publish(snapshot)
             return entry

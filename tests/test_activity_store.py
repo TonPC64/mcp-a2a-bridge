@@ -80,3 +80,22 @@ def test_resolve_activity_db_path_defaults_when_unset(monkeypatch):
     monkeypatch.delenv("A2A_BRIDGE_ACTIVITY_DB", raising=False)
 
     assert resolve_activity_db_path() == DEFAULT_ACTIVITY_DB
+
+
+def test_delete_removes_the_row(tmp_path):
+    store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
+    store.upsert(_entry("t1", 100.0))
+
+    store.delete("t1")
+
+    assert store.get("t1") is None
+    assert store.list() == []
+
+
+def test_delete_of_nonexistent_id_is_a_harmless_noop(tmp_path):
+    store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
+    store.upsert(_entry("t1", 100.0))
+
+    store.delete("does-not-exist")
+
+    assert [e["id"] for e in store.list()] == ["t1"]

@@ -166,3 +166,34 @@ async def test_record_without_store_touches_no_sqlite_file(tmp_path):
     )
 
     assert list(tmp_path.iterdir()) == []
+
+
+async def test_record_with_replaces_task_id_removes_placeholder_row_from_store(tmp_path):
+    """Reconciliation must delete the OLD placeholder row from the shared store.
+
+    The bridge records activity under a locally-generated placeholder id
+    before it has the real A2A task_id, then re-records under the real id
+    with replaces_task_id=<placeholder>. The SQLite write-through must not
+    leave the placeholder row behind as a phantom duplicate.
+    """
+    store = SQLiteActivityStore(tmp_path / "activity.sqlite3")
+    log = ActivityLog(store=store)
+
+    await log.record(
+        task_id="placeholder-1",
+        agent="planner",
+        kind="send_message",
+        state="working",
+        text="sending",
+    )
+    await log.record(
+        task_id="real-task-1",
+        agent="planner",
+        kind="send_message",
+        state="working",
+        text="sending",
+        replaces_task_id="placeholder-1",
+    )
+
+    assert store.get("placeholder-1") is None
+    assert [e["id"] for e in store.list()] == ["real-task-1"]

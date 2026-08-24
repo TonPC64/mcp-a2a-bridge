@@ -1,6 +1,7 @@
 import asyncio
 import threading
 import sqlite3
+import time
 
 from mcp_a2a_bridge.activity import ActivityLog, TEXT_PREVIEW_LIMIT
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore
@@ -233,6 +234,61 @@ class _DeleteFailingStore:
         raise sqlite3.OperationalError("database is locked")
 
 
+class _TransientlyFailingStore:
+    """Stub store that fails its first upsert() then succeeds, to simulate a
+    momentary lock contention that clears on its own."""
+
+    def __init__(self) -> None:
+        self.upsert_calls = 0
+        self.written: list[str] = []
+
+    def upsert(self, entry: dict) -> None:
+        self.upsert_calls += 1
+        if self.upsert_calls == 1:
+            raise sqlite3.OperationalError("database is locked")
+        self.written.append(entry["id"])
+
+    def delete(self, entry_id: str) -> None:
+        pass
+
+
+class _SlowFailingStore:
+    """Stub store whose upsert() blocks (as a contended SQLite write does under
+    busy_timeout) before failing, to pin the cooldown's time anchor."""
+
+    def __init__(self, delay: float) -> None:
+        self._delay = delay
+        self.upsert_calls = 0
+
+    def upsert(self, entry: dict) -> None:
+        self.upsert_calls += 1
+        time.sleep(self._delay)
+        raise sqlite3.OperationalError("database is locked")
+
+    def delete(self, entry_id: str) -> None:
+        pass
+
+
+async def test_cooldown_starts_when_the_write_failed_not_when_record_began():
+    """A contended write can itself consume the whole busy_timeout. If the
+    cooldown were anchored to the timestamp captured at the top of record(),
+    the window would already be expired on return and the very next call would
+    stall on the store again."""
+    store = _SlowFailingStore(delay=0.3)
+    log = ActivityLog(store=store, store_retry_cooldown=0.2)
+
+    await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+    assert store.upsert_calls == 1
+
+    await log.record(
+        task_id="t2", agent="planner", kind="send_message", state="working", text="hi again"
+    )
+
+    assert store.upsert_calls == 1  # still cooling down; not retried immediately
+
+
 async def test_record_survives_store_upsert_failure_and_still_records_and_publishes():
     """A store.upsert() failure (e.g. contended SQLite file) must not propagate
     out of record(): the in-memory entry must still be stored and published."""
@@ -280,10 +336,10 @@ async def test_record_survives_store_delete_failure_on_replaces_task_id_path():
     assert [e.id for e in entries] == ["real-task-1"]
 
 
-async def test_record_disables_store_after_a_failure_so_later_calls_skip_it():
-    """After one store write failure, the store must be disabled for the rest
-    of the process lifetime so repeated failures don't add busy-timeout
-    latency to every subsequent A2A tool call."""
+async def test_record_pauses_store_writes_during_cooldown_after_a_failure():
+    """After a store write failure, subsequent record() calls must skip the
+    store until the cooldown expires, so sustained contention doesn't re-pay
+    the busy_timeout on every A2A tool call."""
     store = _UpsertFailingStore()
     log = ActivityLog(store=store)
 
@@ -296,13 +352,33 @@ async def test_record_disables_store_after_a_failure_so_later_calls_skip_it():
         task_id="t2", agent="planner", kind="send_message", state="working", text="hi again"
     )
 
-    assert store.upsert_calls == 1  # no further attempt after the store was disabled
-    assert log._store is None
+    assert store.upsert_calls == 1  # skipped while cooling down
+    assert log._store_paused_until > time.time()
 
 
-async def test_record_logs_store_disabled_warning_exactly_once(capsys):
-    """The stderr warning about disabling shared-store writes must be emitted
-    once, not on every subsequent record() call."""
+async def test_record_resumes_store_writes_after_the_cooldown_expires():
+    """A momentary contention must not blind this process for its whole
+    lifetime: once the cooldown expires, record() retries the store and a
+    recovered store starts receiving writes again."""
+    store = _TransientlyFailingStore()
+    log = ActivityLog(store=store, store_retry_cooldown=0.0)
+
+    await log.record(
+        task_id="t1", agent="planner", kind="send_message", state="working", text="hi"
+    )
+    assert store.written == []
+
+    await log.record(
+        task_id="t2", agent="planner", kind="send_message", state="working", text="hi again"
+    )
+
+    assert store.upsert_calls == 2
+    assert store.written == ["t2"]
+
+
+async def test_record_logs_store_failure_warning_only_once_per_outage(capsys):
+    """The stderr warning must be emitted once when the store starts failing,
+    not on every subsequent record() call during the same outage."""
     store = _UpsertFailingStore()
     log = ActivityLog(store=store)
 
@@ -317,4 +393,25 @@ async def test_record_logs_store_disabled_warning_exactly_once(capsys):
     )
 
     captured = capsys.readouterr()
-    assert captured.err.count("disabl") == 1
+    assert captured.err.count("shared activity store write failed") == 1
+
+
+async def test_record_does_not_relog_on_every_retry_while_the_store_stays_down(capsys):
+    """With a zero cooldown the store is retried on every call, but a single
+    ongoing outage must still only warn once -- stderr is the bridge's only
+    log channel and must not be flooded."""
+    store = _UpsertFailingStore()
+    log = ActivityLog(store=store, store_retry_cooldown=0.0)
+
+    for index in range(5):
+        await log.record(
+            task_id=f"t{index}",
+            agent="planner",
+            kind="send_message",
+            state="working",
+            text="hi",
+        )
+
+    assert store.upsert_calls == 5  # retried every time, cooldown is zero
+    captured = capsys.readouterr()
+    assert captured.err.count("shared activity store write failed") == 1

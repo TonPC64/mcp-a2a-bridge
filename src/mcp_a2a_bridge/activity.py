@@ -15,6 +15,7 @@ from mcp_a2a_bridge.snapshots import SnapshotSubscribers
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore
 
 TEXT_PREVIEW_LIMIT = 500
+STORE_RETRY_COOLDOWN = 30.0
 
 
 @dataclass
@@ -34,7 +35,12 @@ class ActivityLog:
     Mirrors the OrderedDict LRU shape of TTLTaskStore for consistency.
     """
 
-    def __init__(self, maxsize: int = 500, store: SQLiteActivityStore | None = None) -> None:
+    def __init__(
+        self,
+        maxsize: int = 500,
+        store: SQLiteActivityStore | None = None,
+        store_retry_cooldown: float = STORE_RETRY_COOLDOWN,
+    ) -> None:
         self._maxsize = maxsize
         self._entries: OrderedDict[str, TaskActivity] = OrderedDict()
         # A plain threading.Lock is used (not asyncio.Lock) because record()/list()
@@ -46,6 +52,9 @@ class ActivityLog:
         self._lock = threading.Lock()
         self._subscribers = SnapshotSubscribers()
         self._store = store
+        self._store_retry_cooldown = store_retry_cooldown
+        self._store_paused_until = 0.0
+        self._store_failure_reported = False
 
     async def record(
         self,
@@ -86,7 +95,7 @@ class ActivityLog:
                 updated_at=now,
             )
             self._entries[key] = entry
-            if self._store is not None:
+            if self._store is not None and now >= self._store_paused_until:
                 try:
                     self._store.upsert(
                         {
@@ -101,20 +110,30 @@ class ActivityLog:
                     )
                     if replaced is not None:
                         self._store.delete(replaces_task_id)
+                    self._store_failure_reported = False
                 except Exception as exc:
                     # A crashed/slow/misconfigured shared store must never fail
                     # or slow down the real A2A tool call (spec "Error
-                    # handling"). Once a write fails, disable the store for the
-                    # rest of this process's lifetime rather than retry it on
-                    # every subsequent record(): a contended SQLite file keeps
-                    # failing the same way, and retrying would re-pay the
-                    # busy_timeout cost (finding #2) on every A2A tool call.
-                    print(
-                        "mcp-a2a-bridge: shared activity store write failed, "
-                        f"disabling shared-store writes for this process: {exc}",
-                        file=sys.stderr,
-                    )
-                    self._store = None
+                    # handling"). Pause writes for a cooldown instead of
+                    # retrying immediately, so sustained contention doesn't
+                    # re-pay the busy_timeout on every tool call -- but do not
+                    # disable permanently, or one momentary lock contention
+                    # would blind this process's activity for its whole
+                    # lifetime. Warn once per outage to avoid flooding stderr,
+                    # which is the bridge's only log channel.
+                    # Anchor the cooldown to when the write actually failed,
+                    # not to `now` (captured before the attempt): a contended
+                    # write can itself burn the whole busy_timeout, which would
+                    # otherwise leave the window already expired on return.
+                    self._store_paused_until = time.time() + self._store_retry_cooldown
+                    if not self._store_failure_reported:
+                        self._store_failure_reported = True
+                        print(
+                            "mcp-a2a-bridge: shared activity store write failed, "
+                            f"pausing shared-store writes for "
+                            f"{self._store_retry_cooldown:g}s: {exc}",
+                            file=sys.stderr,
+                        )
             snapshot = self._snapshot_locked()
             self._subscribers.publish(snapshot)
             return entry

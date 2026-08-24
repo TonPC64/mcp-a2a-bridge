@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import traceback
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 
 import uvicorn
 
@@ -24,6 +26,17 @@ from mcp_a2a_bridge.registry import AgentRegistry
 DEFAULT_DASHBOARD_HOST = "0.0.0.0"
 DEFAULT_DASHBOARD_PORT = 9100
 DEFAULT_POLL_INTERVAL_S = 0.5
+
+# How often the poll loop re-checks the stop condition while "sleeping" between
+# ticks, so a SIGINT/SIGTERM-triggered shutdown is noticed promptly instead of
+# being delayed by up to a full poll interval.
+SHUTDOWN_CHECK_INTERVAL_S = 0.05
+
+
+class _StopCondition(Protocol):
+    """Anything exposing a ``should_exit`` flag, e.g. ``uvicorn.Server``."""
+
+    should_exit: bool
 
 
 def build_poll_task(
@@ -41,38 +54,62 @@ def build_poll_task(
 
     async def poll_once() -> None:
         nonlocal last_snapshot
+        # The whole cycle -- store.list(), TaskActivity construction, and the
+        # replace_all publish -- is one unit of work. Per the spec, any poll
+        # failure (not just a store.list() failure) must be caught, logged,
+        # and retried on the next tick. asyncio.CancelledError is a
+        # BaseException (not Exception) in Python 3.8+, so it still
+        # propagates for shutdown and is not swallowed here.
         try:
             rows = store.list()
-        except Exception as exc:  # SQLite read failures must never crash the poll loop
-            print(f"mcp-a2a-bridge-dashboard: poll failed: {exc}", file=sys.stderr)
-            return
+            snapshot = {"tasks": rows}
+            if snapshot == last_snapshot:
+                return
+            last_snapshot = snapshot
 
-        snapshot = {"tasks": rows}
-        if snapshot == last_snapshot:
-            return
-        last_snapshot = snapshot
-
-        entries = [
-            TaskActivity(
-                id=row["id"],
-                agent=row["agent"],
-                kind=row["kind"],
-                state=row["state"],
-                text=row["text"],
-                created_at=row["created_at"],
-                updated_at=row["updated_at"],
+            entries = [
+                TaskActivity(
+                    id=row["id"],
+                    agent=row["agent"],
+                    kind=row["kind"],
+                    state=row["state"],
+                    text=row["text"],
+                    created_at=row["created_at"],
+                    updated_at=row["updated_at"],
+                )
+                for row in rows
+            ]
+            await activity.replace_all(entries)
+        except Exception:  # noqa: BLE001 - must never crash the poll loop; retried next tick
+            print(
+                "mcp-a2a-bridge-dashboard: poll failed, will retry next tick:\n"
+                + traceback.format_exc(),
+                file=sys.stderr,
             )
-            for row in rows
-        ]
-        await activity.replace_all(entries)
 
     return poll_once
 
 
-async def _run_poll_loop(poll_once: Callable[[], Awaitable[None]], interval_s: float) -> None:
-    while True:
+async def _run_poll_loop(
+    poll_once: Callable[[], Awaitable[None]],
+    interval_s: float,
+    stop_condition: _StopCondition,
+) -> None:
+    """Run ``poll_once`` on a timer until ``stop_condition.should_exit`` is set.
+
+    ``stop_condition`` is typically the ``uvicorn.Server`` instance driving the
+    HTTP/SSE server: its signal handlers set ``should_exit`` on SIGINT/SIGTERM,
+    so checking it here ties this loop's lifetime to the server's. The sleep
+    between ticks is broken into short slices so shutdown is noticed within
+    ``SHUTDOWN_CHECK_INTERVAL_S``, not delayed by a full ``interval_s``.
+    """
+    while not stop_condition.should_exit:
         await poll_once()
-        await asyncio.sleep(interval_s)
+        remaining = interval_s
+        while remaining > 0 and not stop_condition.should_exit:
+            step = min(remaining, SHUTDOWN_CHECK_INTERVAL_S)
+            await asyncio.sleep(step)
+            remaining -= step
 
 
 def main() -> None:
@@ -93,7 +130,7 @@ def main() -> None:
         poll_once = build_poll_task(store, activity)
         server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
         await asyncio.gather(
-            _run_poll_loop(poll_once, DEFAULT_POLL_INTERVAL_S),
+            _run_poll_loop(poll_once, DEFAULT_POLL_INTERVAL_S, server),
             server.serve(),
         )
 

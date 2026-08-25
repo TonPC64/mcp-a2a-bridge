@@ -32,7 +32,7 @@ def texts(queue):
 
 
 def stub_run(events, result):
-    async def run(prompt, cwd, session, timeout_s):
+    async def run(prompt, cwd, session, timeout_s, provider=None):
         for event in events: yield event, result
         yield {"type": "result"}, result
     return run
@@ -89,3 +89,19 @@ async def test_empty_instruction_fails_without_running_copilot(monkeypatch):
     monkeypatch.setattr(executor_mod, "run_copilot", lambda *args: (_ for _ in ()).throw(AssertionError("must not run")))
     queue = RecordingQueue(); await CopilotExecutor("/tmp").execute(make_context("cwd: /tmp/x\n"), queue)
     assert statuses(queue)[-1] == "TASK_STATE_FAILED"
+
+
+@pytest.mark.anyio
+async def test_provider_envelope_preserves_cwd_and_forwards_provider(monkeypatch):
+    received = {}
+
+    async def run(prompt, cwd, session, timeout_s, provider=None):
+        received.update(prompt=prompt, cwd=cwd, provider=provider)
+        yield {"type": "result"}, CopilotResult(text="ok", exit_code=0)
+
+    monkeypatch.setattr(executor_mod, "run_copilot", run)
+    queue = RecordingQueue()
+    await CopilotExecutor("/default").execute(
+        make_context("provider: litellm-auto\ncwd: /tmp/project\ninspect it"), queue
+    )
+    assert received == {"prompt": "inspect it", "cwd": "/tmp/project", "provider": "litellm-auto"}

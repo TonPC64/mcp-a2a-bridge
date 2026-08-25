@@ -3,8 +3,8 @@
 An MCP server that lets coding agents — GitHub Copilot CLI, Claude Code, Codex,
 and Hermes — call remote [A2A](https://a2a-protocol.org) agents.
 
-The bridge is an A2A **client**. This repository also ships `copilot-a2a-agent`,
-the loopback-only A2A server that exposes GitHub Copilot CLI.
+The bridge is an A2A client and the active home for the bundled Copilot A2A
+server.
 
 ## Requirements
 
@@ -124,6 +124,13 @@ Build the frontend once:
 Start the dashboard (once, independent of any bridge):
 
     mcp-a2a-bridge-dashboard
+
+For macOS, use the included `launchd/com.example.a2a-bridge-dashboard.plist`
+(template placeholders: `__REPO__` and `__HOME__`) so the dashboard is restarted
+at login and after crashes. Install it as `~/Library/LaunchAgents/com.chanwit.a2a-bridge-dashboard.plist`,
+then load it with `launchctl bootstrap gui/$(id -u) <plist-path>`. Do not rely
+on a bridge process to host the dashboard; bridge processes are independently
+started and stopped by MCP clients.
 
 Then enable each bridge process to report into the shared activity store:
 

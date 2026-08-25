@@ -113,6 +113,27 @@ async def test_send_message_records_into_activity_log(monkeypatch):
     assert entries[0].text == "done"
 
 
+async def test_send_message_forwards_provider_selection(monkeypatch):
+    received = []
+
+    async def fake_send_message(entry, card, message, **kwargs):
+        received.append(message)
+        return A2AResult(state="completed", text="done", task_id=None, context_id="ctx-1", done=True)
+
+    monkeypatch.setattr(client_module, "send_message", fake_send_message)
+    await build_server(fake_registry(planner="http://x")).call_tool(
+        "a2a_send_message", {"agent": "planner", "message": "inspect it", "provider": "litellm-auto"}
+    )
+    assert received == ["provider: litellm-auto\ninspect it"]
+
+
+async def test_send_message_rejects_unknown_provider():
+    with pytest.raises(Exception, match="provider must be one of"):
+        await build_server(fake_registry(planner="http://x")).call_tool(
+            "a2a_send_message", {"agent": "planner", "message": "inspect it", "provider": "ollama"}
+        )
+
+
 async def test_new_task_keeps_remote_task_id_unset_and_reconciles_activity(monkeypatch):
     """A synthetic dashboard id must never be sent to a server creating a task."""
     started = asyncio.Event()

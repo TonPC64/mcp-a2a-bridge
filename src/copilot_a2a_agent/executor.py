@@ -39,7 +39,17 @@ class CopilotExecutor(AgentExecutor):
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         await updater.start_work()
         self._record(task.id, source=source, state="working", text="Task received by Copilot.")
-        prompt, cwd = split_cwd(get_message_text(context.message), self._default_cwd)
+        provider = None
+        prompt = get_message_text(context.message)
+        lines = prompt.splitlines()
+        if lines and lines[0].strip().lower().startswith("provider:"):
+            provider = lines[0].split(":", 1)[1].strip().lower()
+            prompt = "\n".join(lines[1:]).lstrip("\n")
+            if provider not in {"litellm-auto", "github"}:
+                await updater.failed(updater.new_agent_message([Part(text="Unsupported provider. Use litellm-auto or github.")]))
+                self._record(task.id, source=source, state="failed", text="Unsupported provider.")
+                return
+        prompt, cwd = split_cwd(prompt, self._default_cwd)
         if not prompt.strip():
             await updater.failed(updater.new_agent_message([Part(text="No instruction was provided.")]))
             self._record(task.id, source=source, state="failed", text="No instruction was provided.")
@@ -47,7 +57,7 @@ class CopilotExecutor(AgentExecutor):
         result = CopilotResult(session_id=session_uuid(task.context_id))
         last_note = ""
         try:
-            async for event, result in run_copilot(prompt, cwd, result.session_id, timeout_s=self._timeout_s):
+            async for event, result in run_copilot(prompt, cwd, result.session_id, timeout_s=self._timeout_s, provider=provider):
                 if (note := event_progress(event)) and note != last_note:
                     last_note = note
                     await updater.update_status(TaskState.TASK_STATE_WORKING, updater.new_agent_message([Part(text=note)]))

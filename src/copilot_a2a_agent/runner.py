@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -77,13 +78,25 @@ def apply_event(event: dict, result: CopilotResult) -> CopilotResult:
     return result
 
 
-async def run_copilot(prompt: str, cwd: str, session_id: str, timeout_s: float = 1800) -> AsyncIterator[tuple[dict, CopilotResult]]:
+def provider_environment(provider: str | None) -> dict[str, str]:
+    env = os.environ.copy()
+    names = ("COPILOT_PROVIDER_BASE_URL", "COPILOT_PROVIDER_TYPE", "COPILOT_PROVIDER_API_KEY", "COPILOT_PROVIDER_BEARER_TOKEN", "COPILOT_PROVIDER_WIRE_API", "COPILOT_PROVIDER_MODEL_ID", "COPILOT_PROVIDER_WIRE_MODEL")
+    if provider == "github":
+        for name in names:
+            env.pop(name, None)
+    elif provider == "litellm-auto":
+        env.update({"COPILOT_PROVIDER_BASE_URL": "http://127.0.0.1:4000/v1", "COPILOT_PROVIDER_TYPE": "openai", "COPILOT_PROVIDER_API_KEY": env.get("LITELLM_MASTER_KEY", ""), "COPILOT_PROVIDER_WIRE_API": "responses", "COPILOT_PROVIDER_MODEL_ID": "gpt-5.4", "COPILOT_PROVIDER_WIRE_MODEL": "auto"})
+    return env
+
+
+async def run_copilot(prompt: str, cwd: str, session_id: str, timeout_s: float = 1800, provider: str | None = None) -> AsyncIterator[tuple[dict, CopilotResult]]:
     if not Path(cwd).is_dir():
         raise RunnerError(f"working directory does not exist: {cwd}")
     try:
-        proc = await asyncio.create_subprocess_exec(*build_argv(prompt, cwd, session_id), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        proc = await asyncio.create_subprocess_exec(*build_argv(prompt, cwd, session_id), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=provider_environment(provider))
     except FileNotFoundError as exc:
         raise RunnerError(f"{COPILOT_BIN} not found on PATH") from exc
+    stderr_task = asyncio.create_task(proc.stderr.read()) if proc.stderr else None
     result = CopilotResult(session_id=session_id)
     try:
         async with asyncio.timeout(timeout_s):
@@ -105,3 +118,5 @@ async def run_copilot(prompt: str, cwd: str, session_id: str, timeout_s: float =
         if proc.returncode is None:
             proc.kill()
         await proc.wait()
+        if stderr_task:
+            await stderr_task

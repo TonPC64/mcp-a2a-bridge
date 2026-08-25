@@ -72,14 +72,21 @@ def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -
         task_id: str | None = None,
         context_id: str | None = None,
         timeout_s: int = 60,
+        provider: str | None = None,
     ) -> dict:
         """Send a message to an A2A agent and return its reply.
 
+        Set provider to "litellm-auto" or "github" when the target agent
+        supports provider selection. The selected provider is carried in the
+        message for the local Copilot A2A agent; other agents may ignore it.
         Pass task_id to continue an existing task, for example to answer an
         agent that returned state="input_required". If the agent is still
         working when timeout_s elapses, this returns done=false with a task_id
         to poll rather than blocking.
         """
+        if provider is not None and provider not in {"litellm-auto", "github"}:
+            raise ValueError("provider must be one of: litellm-auto, github")
+        dispatched_message = f"provider: {provider}\n{message}" if provider else message
         local_activity_task_id = task_id or uuid.uuid4().hex
         activity_task_id = local_activity_task_id
         await activity.record(
@@ -112,7 +119,7 @@ def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -
             result = await client.send_message(
                 entry,
                 card,
-                message,
+                dispatched_message,
                 task_id=task_id,
                 context_id=context_id,
                 timeout_s=timeout_s,

@@ -73,7 +73,8 @@ class FakeStdout:
 
 
 class FakeProcess:
-    def __init__(self, output): self.stdout, self.returncode = FakeStdout([output]), 0
+    def __init__(self, output, stderr=b""):
+        self.stdout, self.stderr, self.returncode = FakeStdout([output]), FakeStdout([stderr]), 0
     def kill(self): self.returncode = -9
     async def wait(self): return self.returncode
 
@@ -85,3 +86,16 @@ async def test_run_copilot_accepts_json_lines_larger_than_stream_limit(monkeypat
     async def create_process(*args, **kwargs): return process
     monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", create_process)
     assert [event["type"] async for event, _ in runner.run_copilot("review", "/tmp", "session")] == ["assistant.message", "result"]
+
+
+@pytest.mark.anyio
+async def test_run_copilot_drains_stderr_while_reading_events(monkeypatch):
+    import copilot_a2a_agent.runner as runner
+
+    process = FakeProcess(b'{"type":"result","exitCode":0}\n', b"Copilot diagnostic\n")
+
+    async def create_process(*args, **kwargs): return process
+
+    monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", create_process)
+    assert [event["type"] async for event, _ in runner.run_copilot("review", "/tmp", "session")] == ["result"]
+    assert next(process.stderr.chunks, None) is None

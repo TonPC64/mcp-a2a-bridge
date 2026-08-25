@@ -18,7 +18,7 @@ def build_card(port: int, host: str = "127.0.0.1") -> AgentCard:
         capabilities=AgentCapabilities(streaming=True),
         skills=[AgentSkill(
             id="delegate-coding-task", name="Delegate a coding task",
-            description="Ask Copilot to work in a local repository. Prefix with 'cwd: /path/to/repo' to choose it.",
+            description="Ask Copilot to work in a local repository. Prefix with 'cwd: /path/to/repo' to choose it. Prefix with 'provider: litellm-auto' or 'provider: github' to select the model provider.",
             tags=["coding", "refactor", "tests", "shell", "repository"],
             examples=["cwd: /Users/me/project\nAdd a --verbose flag to the CLI and test it", "cwd: /Users/me/project\nWhy is test_auth failing?"],
         )],

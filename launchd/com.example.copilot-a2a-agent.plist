@@ -6,9 +6,8 @@
   <string>com.example.copilot-a2a-agent</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__REPO__/.venv/bin/copilot-a2a-agent</string>
-    <string>--port</string><string>9002</string>
-    <string>--cwd</string><string>__DEFAULT_CWD__</string>
+    <string>/bin/zsh</string>
+    <string>__REPO__/run-copilot-a2a-agent.zsh</string>
   </array>
   <key>WorkingDirectory</key><string>__REPO__</string>
   <key>EnvironmentVariables</key>

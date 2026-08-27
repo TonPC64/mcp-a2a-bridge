@@ -8,6 +8,10 @@ Repository: https://github.com/TonPC64/mcp-a2a-bridge
 
 Licensed under the [MIT License](LICENSE).
 
+For coding-agent instructions, start with [`AI_README.md`](AI_README.md), then
+use [`skills/setup/SKILL.md`](skills/setup/SKILL.md) for installation or
+[`skills/contribute/SKILL.md`](skills/contribute/SKILL.md) for changes and PRs.
+
 ## Getting started
 
 ## Choose your setup

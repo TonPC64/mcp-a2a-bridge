@@ -6,23 +6,41 @@ includes an optional read-only activity dashboard.
 
 ## Getting started
 
-### Prerequisites
+## Choose your setup
 
-- Python 3.11 or later
-- [`uv`](https://docs.astral.sh/uv/)
-- Node.js and npm **only** when developing the dashboard frontend
+Both profiles need Python 3.11 or later and [`uv`](https://docs.astral.sh/uv/).
 
-Clone the repository and create an editable development installation:
+### MCP only
+
+Install and run the MCP bridge only. This does not require Node.js/npm or a
+dashboard frontend build.
 
 ```bash
 git clone <repository-url> mcp-a2a-bridge
 cd mcp-a2a-bridge
 uv venv --python 3.11
-uv pip install -e ".[dev]"
+uv pip install -e .
 ```
 
-The commands below use `/absolute/path/to/mcp-a2a-bridge`. Replace it with
-the absolute path to your clone; do not copy another user's path.
+### MCP + dashboard
+
+Install the optional dashboard web runtime, then build its bundled frontend
+assets. Node.js and npm are needed only for this build (or frontend
+development), not to run an already-built dashboard.
+
+```bash
+git clone <repository-url> mcp-a2a-bridge
+cd mcp-a2a-bridge
+uv venv --python 3.11
+uv pip install -e ".[dashboard]"
+npm --prefix dashboard ci
+npm --prefix dashboard run build
+```
+
+For development and tests, install `.[dev]`; it includes the Python packages
+needed by the dashboard test suite. The commands below use
+`/absolute/path/to/mcp-a2a-bridge`. Replace it with the absolute path to your
+clone; do not copy another user's path.
 
 ### Configure A2A agents
 
@@ -133,10 +151,13 @@ The optional standalone dashboard shows configured agents, their
 status/skills, and live task activity from bridge processes on the same
 machine. It is read-only: it never sends messages to agents.
 
-Start it after installing the project:
+Install the `dashboard` profile and build the assets before starting it:
 
 ```bash
 cd /absolute/path/to/mcp-a2a-bridge
+uv pip install -e ".[dashboard]"
+npm --prefix dashboard ci
+npm --prefix dashboard run build
 uv run mcp-a2a-bridge-dashboard
 ```
 
@@ -182,7 +203,7 @@ assets:
 
 ```bash
 cd /absolute/path/to/mcp-a2a-bridge/dashboard
-npm install
+npm ci
 npm run dev
 ```
 

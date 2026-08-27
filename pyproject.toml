@@ -7,8 +7,6 @@ dependencies = [
     "mcp>=2.0.0,<3",
     "a2a-sdk[http-server]>=1.1,<2",
     "httpx>=0.28.1",
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
 ]
 
 [project.scripts]
@@ -17,10 +15,16 @@ mcp-a2a-bridge-dashboard = "mcp_a2a_bridge.dashboard_service:main"
 copilot-a2a-agent = "copilot_a2a_agent.server:main"
 
 [project.optional-dependencies]
+dashboard = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "a2a-sdk[http-server]>=1.1,<2",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
 
 [build-system]

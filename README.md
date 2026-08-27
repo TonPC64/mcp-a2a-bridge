@@ -265,7 +265,7 @@ npm test
 npm run build
 ```
 
-CI runs the Python suite on Python 3.11 and 3.12, validates `uv.lock`, and
+CI runs the Python suite on Python 3.11, validates `uv.lock`, and
 runs the dashboard install, tests, and production build on the latest Node.js
 24 release.
 

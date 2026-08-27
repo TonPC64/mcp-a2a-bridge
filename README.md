@@ -6,14 +6,15 @@ includes an optional read-only activity dashboard.
 
 Repository: https://github.com/TonPC64/mcp-a2a-bridge
 
-The GitHub repository is currently private while the project is being prepared
-for public release.
+Licensed under the [MIT License](LICENSE).
 
 ## Getting started
 
 ## Choose your setup
 
 Both profiles need Python 3.11 or later and [`uv`](https://docs.astral.sh/uv/).
+The optional dashboard frontend requires Node.js 24.15 or later; CI uses the
+latest Node.js 24 release.
 
 ### MCP only
 
@@ -23,8 +24,7 @@ dashboard frontend build.
 ```bash
 git clone https://github.com/TonPC64/mcp-a2a-bridge.git mcp-a2a-bridge
 cd mcp-a2a-bridge
-uv venv --python 3.11
-uv pip install -e .
+uv sync --locked
 ```
 
 ### MCP + dashboard
@@ -36,14 +36,13 @@ development), not to run an already-built dashboard.
 ```bash
 git clone https://github.com/TonPC64/mcp-a2a-bridge.git mcp-a2a-bridge
 cd mcp-a2a-bridge
-uv venv --python 3.11
-uv pip install -e ".[dashboard]"
+uv sync --extra dashboard --locked
 npm --prefix dashboard ci
 npm --prefix dashboard run build
 ```
 
-For development and tests, install `.[dev]`; it includes the Python packages
-needed by the dashboard test suite. The commands below use
+For development and tests, use `uv sync --all-extras --locked`; it includes
+the Python packages needed by the dashboard test suite. The commands below use
 `/absolute/path/to/mcp-a2a-bridge`. Replace it with the absolute path to your
 clone; do not copy another user's path.
 
@@ -160,14 +159,14 @@ Install the `dashboard` profile and build the assets before starting it:
 
 ```bash
 cd /absolute/path/to/mcp-a2a-bridge
-uv pip install -e ".[dashboard]"
+uv sync --extra dashboard --locked
 npm --prefix dashboard ci
 npm --prefix dashboard run build
 uv run mcp-a2a-bridge-dashboard
 ```
 
-It listens on port `9100` by default. Open `http://127.0.0.1:9100` on the
-same machine, or `http://<machine-ip>:9100` from a trusted local network.
+It listens only on `127.0.0.1:9100` by default. Open
+`http://127.0.0.1:9100` on the same machine.
 
 Enable reporting for every bridge process whose activity should appear in the
 dashboard. Add this environment variable to the MCP server configuration (or
@@ -186,16 +185,31 @@ in the shared dashboard. The dashboard can start before or after them.
 | `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` to persist this bridge process's activity |
 | `A2A_BRIDGE_ACTIVITY_DB` | `~/.config/a2a-bridge/activity.sqlite3` | Shared SQLite activity database |
 | `A2A_BRIDGE_ACTIVITY_SOURCE` | `remote` | Source label for activity written by compatible processes |
-| `A2A_BRIDGE_DASHBOARD_HOST` | `0.0.0.0` | Dashboard bind address |
+| `A2A_BRIDGE_DASHBOARD_HOST` | `127.0.0.1` | Dashboard bind address |
 | `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Dashboard port |
+| `A2A_BRIDGE_DASHBOARD_TOKEN` | unset (off) | Bearer token that protects the dashboard and API |
 | `A2A_BRIDGE_HERMES_AUDIT` | unset | Read-only override for Hermes' `a2a_audit.jsonl` |
 | `HERMES_HOME` | unset | Used to find `$HERMES_HOME/a2a_audit.jsonl` when no override is set |
 
-**Security warning:** the dashboard is currently unauthenticated and, by
-default, binds to all network interfaces. Treat it as local-network-only. Do
-not expose it to the public internet without authentication, TLS, and network
-access controls. For a single-machine setup, bind it to loopback with
-`A2A_BRIDGE_DASHBOARD_HOST=127.0.0.1`.
+### LAN deployment
+
+Only expose the dashboard deliberately. Set a strong token and an explicit
+non-loopback bind, then put it behind a TLS-terminating reverse proxy with its
+own network access controls:
+
+```bash
+export A2A_BRIDGE_DASHBOARD_HOST=0.0.0.0
+export A2A_BRIDGE_DASHBOARD_TOKEN="$(openssl rand -hex 32)"
+uv run mcp-a2a-bridge-dashboard
+```
+
+When a token is set, dashboard HTML, static assets, API routes, and SSE routes
+all require it. Browser users enter it once at `/login`; the resulting
+HttpOnly, same-site session cookie lets EventSource reconnect normally. API clients
+can instead send `Authorization: Bearer <token>`. The service never
+logs the token. A token authenticates access but does not encrypt traffic, so
+do not use the direct HTTP LAN endpoint across untrusted networks; use HTTPS
+at the reverse proxy.
 
 For macOS, the `launchd/com.example.a2a-bridge-dashboard.plist` template can
 run the dashboard at login. Replace its `__REPO__` and `__HOME__` placeholders
@@ -203,8 +217,8 @@ before installing it as a LaunchAgent.
 
 ### Dashboard frontend development
 
-Node.js/npm are only required to work on the frontend or rebuild its bundled
-assets:
+Node.js 24.15+ and npm are only required to work on the frontend or rebuild
+its bundled assets:
 
 ```bash
 cd /absolute/path/to/mcp-a2a-bridge/dashboard
@@ -236,6 +250,7 @@ Hermes. It checks `A2A_BRIDGE_HERMES_AUDIT`, then
 Run the Python test suite from the repository root:
 
 ```bash
+uv sync --all-extras --locked
 uv run pytest -v
 ```
 
@@ -245,6 +260,10 @@ Run dashboard tests or make a production dashboard build from `dashboard/`:
 npm test
 npm run build
 ```
+
+CI runs the Python suite on Python 3.11 and 3.12, validates `uv.lock`, and
+runs the dashboard install, tests, and production build on the latest Node.js
+24 release.
 
 `tests/test_integration.py` runs an A2A agent in-process and exercises the
 bridge end to end.

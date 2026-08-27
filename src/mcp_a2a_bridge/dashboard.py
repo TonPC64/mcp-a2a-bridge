@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import secrets
+from urllib.parse import parse_qs
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from mcp_a2a_bridge.activity import ActivityLog
@@ -48,9 +50,47 @@ def build_dashboard_app(
     registry: AgentRegistry,
     activity: ActivityLog,
     dist_dir: Path | None = None,
+    bearer_token: str | None = None,
 ) -> FastAPI:
     dist_dir = dist_dir if dist_dir is not None else DIST_DIR
     app = FastAPI(title="a2a-bridge dashboard")
+
+    def authenticated(request: Request) -> bool:
+        authorization = request.headers.get("authorization", "")
+        scheme, _, token = authorization.partition(" ")
+        supplied_token = token if scheme.lower() == "bearer" else request.cookies.get("dashboard_token", "")
+        return bool(supplied_token) and secrets.compare_digest(supplied_token, bearer_token or "")
+
+    @app.middleware("http")
+    async def require_dashboard_token(request: Request, call_next):
+        if not bearer_token or request.url.path == "/login" or authenticated(request):
+            return await call_next(request)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(
+                {"detail": "Dashboard authentication required"},
+                status_code=401,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return RedirectResponse("/login", status_code=303)
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_form() -> str:
+        return """<!doctype html><title>Dashboard login</title><form method="post"><label>Token <input name="token" type="password" required autofocus></label><button>Login</button></form>"""
+
+    @app.post("/login")
+    async def login(request: Request):
+        token = parse_qs((await request.body()).decode()).get("token", [""])[0]
+        if not bearer_token or not secrets.compare_digest(token, bearer_token):
+            return JSONResponse({"detail": "Invalid dashboard token"}, status_code=401)
+        response = RedirectResponse("/", status_code=303)
+        response.set_cookie(
+            "dashboard_token",
+            token,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https",
+        )
+        return response
 
     @app.get("/api/agents")
     async def get_agents() -> dict:

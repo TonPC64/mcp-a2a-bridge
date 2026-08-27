@@ -148,6 +148,41 @@ def test_root_with_build_serves_index_html(tmp_path):
     assert "dashboard" in response.text
 
 
+def test_dashboard_token_protects_html_api_static_and_sse(tmp_path):
+    """Removing auth from the shared middleware must expose every dashboard route."""
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<html>dashboard</html>")
+    (dist / "app.js").write_text("console.log('dashboard')")
+    client = TestClient(
+        build_dashboard_app(fake_registry(), ActivityLog(), dist_dir=dist, bearer_token="test-token")
+    )
+
+    assert client.get("/").status_code == 200
+    assert "Login" in client.get("/").text
+    assert client.get("/app.js").status_code == 200
+    assert "Login" in client.get("/app.js").text
+    assert client.get("/api/tasks").status_code == 401
+    assert client.get("/api/tasks/events").status_code == 401
+
+    response = client.post("/login", data={"token": "test-token"}, follow_redirects=False)
+    assert response.status_code == 303
+    assert "httponly" in response.headers["set-cookie"].lower()
+
+    assert client.get("/").text == "<html>dashboard</html>"
+    assert client.get("/app.js").text == "console.log('dashboard')"
+    assert client.get("/api/tasks").status_code == 200
+
+
+def test_dashboard_token_accepts_bearer_header_without_logging_in():
+    app = build_dashboard_app(fake_registry(), ActivityLog(), bearer_token="test-token")
+    client = TestClient(app)
+
+    response = client.get("/api/tasks", headers={"Authorization": "Bearer test-token"})
+
+    assert response.status_code == 200
+
+
 async def event_stream(app, path: str):
     route = next(route for route in app.routes if route.path == path)
     request = Request({"type": "http", "method": "GET", "path": path, "headers": []})

@@ -3,7 +3,11 @@ import json
 
 from mcp_a2a_bridge.activity import ActivityLog
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore
-from mcp_a2a_bridge.dashboard_service import _run_poll_loop, build_poll_task
+from mcp_a2a_bridge.dashboard_service import (
+    DEFAULT_DASHBOARD_HOST,
+    _run_poll_loop,
+    build_poll_task,
+)
 from mcp_a2a_bridge.hermes_audit import (
     list_hermes_audit_entries,
     merge_task_activity,
@@ -33,6 +37,10 @@ async def test_poll_task_publishes_new_snapshot_from_store(tmp_path):
     assert len(entries) == 1
     assert entries[0].id == "t1"
     assert entries[0].state == "working"
+
+
+def test_dashboard_binds_loopback_by_default():
+    assert DEFAULT_DASHBOARD_HOST == "127.0.0.1"
 
 
 async def test_poll_task_does_not_publish_when_snapshot_unchanged(tmp_path):

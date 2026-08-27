@@ -29,7 +29,7 @@ from mcp_a2a_bridge.hermes_audit import (
 )
 from mcp_a2a_bridge.registry import AgentRegistry
 
-DEFAULT_DASHBOARD_HOST = "0.0.0.0"
+DEFAULT_DASHBOARD_HOST = "127.0.0.1"
 DEFAULT_DASHBOARD_PORT = 9100
 DEFAULT_POLL_INTERVAL_S = 0.5
 
@@ -139,12 +139,20 @@ def main() -> None:
         print(f"mcp-a2a-bridge-dashboard: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    store = SQLiteActivityStore(resolve_activity_db_path())
-    activity = ActivityLog()
-    app = build_dashboard_app(registry, activity)
-
     host = os.environ.get("A2A_BRIDGE_DASHBOARD_HOST", DEFAULT_DASHBOARD_HOST)
     port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
+    bearer_token = os.environ.get("A2A_BRIDGE_DASHBOARD_TOKEN", "").strip() or None
+    if host not in {"127.0.0.1", "localhost", "::1"} and not bearer_token:
+        print(
+            "mcp-a2a-bridge-dashboard: refusing non-loopback bind without "
+            "A2A_BRIDGE_DASHBOARD_TOKEN",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
+    store = SQLiteActivityStore(resolve_activity_db_path())
+    activity = ActivityLog()
+    app = build_dashboard_app(registry, activity, bearer_token=bearer_token)
 
     async def _serve() -> None:
         aliases = {registry.entry(name).url: name for name in registry.names()}

@@ -4,6 +4,11 @@ An MCP server that lets coding agents — GitHub Copilot CLI, Claude Code, Codex
 and Hermes — call remote [A2A](https://a2a-protocol.org) agents. It also
 includes an optional read-only activity dashboard.
 
+Repository: https://github.com/TonPC64/mcp-a2a-bridge
+
+The GitHub repository is currently private while the project is being prepared
+for public release.
+
 ## Getting started
 
 ## Choose your setup
@@ -16,7 +21,7 @@ Install and run the MCP bridge only. This does not require Node.js/npm or a
 dashboard frontend build.
 
 ```bash
-git clone <repository-url> mcp-a2a-bridge
+git clone https://github.com/TonPC64/mcp-a2a-bridge.git mcp-a2a-bridge
 cd mcp-a2a-bridge
 uv venv --python 3.11
 uv pip install -e .
@@ -29,7 +34,7 @@ assets. Node.js and npm are needed only for this build (or frontend
 development), not to run an already-built dashboard.
 
 ```bash
-git clone <repository-url> mcp-a2a-bridge
+git clone https://github.com/TonPC64/mcp-a2a-bridge.git mcp-a2a-bridge
 cd mcp-a2a-bridge
 uv venv --python 3.11
 uv pip install -e ".[dashboard]"

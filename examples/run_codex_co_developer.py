@@ -37,8 +37,8 @@ _CODEX_SEARCH_DIRS = (
 )
 
 
-def _resolve_codex_bin() -> str:
-    """Find the codex CLI's absolute path even under a minimal PATH.
+def _resolve_codex_bin() -> str | None:
+    """Find an absolute Codex CLI path, or return None when unavailable.
 
     This process is often launched by launchd (e.g. as a LaunchAgent), whose
     PATH is a minimal `/usr/bin:/bin:/usr/sbin:/sbin` — it does not include
@@ -53,14 +53,14 @@ def _resolve_codex_bin() -> str:
     """
     found = shutil.which("codex")
     if found:
-        return found
+        return str(Path(found).resolve())
 
     for directory in _CODEX_SEARCH_DIRS:
         candidate = directory / "codex"
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
 
-    return "codex"
+    return None
 
 
 CODEX_BIN = _resolve_codex_bin()
@@ -129,6 +129,11 @@ class CodexExecutor(AgentExecutor):
         await updater.start_work()
         source = self._activity_writer.source_for(context) if self._activity_writer else "remote"
         self._record_activity(task.id, source, "working", "Task received.")
+        if CODEX_BIN is None:
+            message = "Codex CLI is unavailable. Install it and restart codex-co-developer."
+            await updater.failed(updater.new_agent_message([Part(text=message)]))
+            self._record_activity(task.id, source, "failed", message)
+            return
         prompt = get_message_text(context.message)
         child_env = os.environ.copy()
         child_env["PATH"] = os.pathsep.join(

@@ -1,3 +1,4 @@
+import os
 import socket
 import subprocess
 import sys
@@ -44,8 +45,17 @@ def test_codex_bin_resolves_even_with_a_minimal_path():
 
     resolved = result.stdout.strip()
     assert result.returncode == 0, result.stderr
-    assert resolved, "expected a non-empty resolved codex path"
+    if resolved == "None":
+        return
     assert Path(resolved).is_absolute(), f"expected an absolute path, got {resolved!r}"
+    assert Path(resolved).is_file() and os.access(resolved, os.X_OK)
+
+
+def test_codex_bin_is_unavailable_when_no_executable_can_be_found(monkeypatch, tmp_path):
+    monkeypatch.setattr(codex_module.shutil, "which", lambda _: None)
+    monkeypatch.setattr(codex_module, "_CODEX_SEARCH_DIRS", (tmp_path,))
+
+    assert codex_module._resolve_codex_bin() is None
 
 
 def test_codex_executor_uses_the_resolved_codex_binary():

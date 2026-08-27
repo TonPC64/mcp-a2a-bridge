@@ -86,7 +86,7 @@ describe("TaskList", () => {
       "task-activity",
       "task-updated",
     ]);
-    expect(screen.getByText("Nov 15, 2023").closest("time")).toHaveAttribute("dateTime", "2023-11-14T22:13:25.000Z");
+    expect(row.querySelector("time")).toHaveAttribute("dateTime", "2023-11-14T22:13:25.000Z");
   });
 
   it("renders source and destination as labelled participant tags", () => {

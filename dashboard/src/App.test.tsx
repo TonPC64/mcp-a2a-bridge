@@ -148,7 +148,7 @@ describe("App", () => {
 
     const jumpListeners = () => addEventListener.mock.calls.filter(([event, , options]) => event === "scroll" && (options as AddEventListenerOptions).passive);
     expect(jumpListeners()).toHaveLength(1);
-    window.dispatchEvent(new Event("scroll"));
+    act(() => window.dispatchEvent(new Event("scroll")));
     expect(jumpListeners()).toHaveLength(1);
     unmount();
     expect(removeEventListener).toHaveBeenCalledWith("scroll", jumpListeners()[0][1]);

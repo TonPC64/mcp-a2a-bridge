@@ -4,6 +4,8 @@ __pycache__/
 dist/
 .pytest_cache/
 .worktrees/
+# Agent planning/tool artifacts
 .superpowers/
+**/superpowers/
 dashboard/node_modules/
 dashboard/dist/

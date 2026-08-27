@@ -12,6 +12,26 @@ For coding-agent instructions, start with [`AGENTS.md`](AGENTS.md), then
 use [`skills/setup/SKILL.md`](skills/setup/SKILL.md) for installation or
 [`skills/contribute/SKILL.md`](skills/contribute/SKILL.md) for changes and PRs.
 
+## Dashboard UI showcase
+
+The optional dashboard uses a futuristic Liquid Glass interface with compact
+agent cards, live task activity, two-column task summaries, status indicators,
+and responsive layouts. This screenshot uses the opt-in frontend mock data mode
+so it is safe to reproduce without connecting to real agents or exposing logs.
+
+![A2A Bridge Dashboard desktop showcase](docs/assets/dashboard-desktop.png)
+
+To run the same mock UI locally:
+
+```bash
+cd /absolute/path/to/mcp-a2a-bridge/dashboard
+npm ci
+npm run dev:mock -- --host 127.0.0.1
+```
+
+The mock mode is for UI development and screenshots only; normal builds use the
+live dashboard API and SSE.
+
 ## Getting started
 
 ## Choose your setup

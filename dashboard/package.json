@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:mock": "VITE_USE_MOCK_DATA=true vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run"
   },

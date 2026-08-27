@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+from mcp_a2a_bridge.config import Registry
+import mcp_a2a_bridge.dashboard_service as dashboard_service
 from mcp_a2a_bridge.activity import ActivityLog
 from mcp_a2a_bridge.activity_store import SQLiteActivityStore
 from mcp_a2a_bridge.dashboard_service import (
@@ -41,6 +43,30 @@ async def test_poll_task_publishes_new_snapshot_from_store(tmp_path):
 
 def test_dashboard_binds_loopback_by_default():
     assert DEFAULT_DASHBOARD_HOST == "127.0.0.1"
+
+
+def test_dashboard_allows_tokenless_lan_bind(monkeypatch, tmp_path):
+    class ImmediateServer:
+        def __init__(self, config):
+            self.config = config
+            self.should_exit = False
+
+        async def serve(self):
+            self.should_exit = True
+
+    async def poll_once():
+        pass
+
+    monkeypatch.setenv("A2A_BRIDGE_DASHBOARD_HOST", "0.0.0.0")
+    monkeypatch.delenv("A2A_BRIDGE_DASHBOARD_TOKEN", raising=False)
+    monkeypatch.setattr(dashboard_service, "load_registry", lambda _: Registry(path=None, agents={}))
+    monkeypatch.setattr(dashboard_service, "resolve_config_path", lambda: tmp_path / "agents.json")
+    monkeypatch.setattr(dashboard_service, "resolve_activity_db_path", lambda: tmp_path / "activity.sqlite3")
+    monkeypatch.setattr(dashboard_service, "build_dashboard_app", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(dashboard_service, "build_poll_task", lambda *_args, **_kwargs: poll_once)
+    monkeypatch.setattr(dashboard_service.uvicorn, "Server", ImmediateServer)
+
+    dashboard_service.main()
 
 
 async def test_poll_task_does_not_publish_when_snapshot_unchanged(tmp_path):

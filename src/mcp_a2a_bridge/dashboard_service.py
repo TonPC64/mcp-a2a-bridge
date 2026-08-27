@@ -142,13 +142,6 @@ def main() -> None:
     host = os.environ.get("A2A_BRIDGE_DASHBOARD_HOST", DEFAULT_DASHBOARD_HOST)
     port = int(os.environ.get("A2A_BRIDGE_DASHBOARD_PORT", DEFAULT_DASHBOARD_PORT))
     bearer_token = os.environ.get("A2A_BRIDGE_DASHBOARD_TOKEN", "").strip() or None
-    if host not in {"127.0.0.1", "localhost", "::1"} and not bearer_token:
-        print(
-            "mcp-a2a-bridge-dashboard: refusing non-loopback bind without "
-            "A2A_BRIDGE_DASHBOARD_TOKEN",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
 
     store = SQLiteActivityStore(resolve_activity_db_path())
     activity = ActivityLog()

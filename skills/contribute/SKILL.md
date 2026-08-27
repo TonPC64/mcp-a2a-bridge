@@ -34,7 +34,7 @@ Use this workflow for any code, dependency, documentation, or dashboard change. 
 ## Security checklist
 
 - Dashboard defaults to loopback.
-- Non-loopback dashboard binds require `A2A_BRIDGE_DASHBOARD_TOKEN`.
+- Tokenless non-loopback dashboard binds are documented as trusted-LAN-only.
 - Do not expose bearer tokens in logs, URLs, screenshots, README examples, or commits.
 - Use TLS and network access controls for LAN deployments.
 - Treat `.a2a-agents.json` and custom headers as secret-bearing configuration.

@@ -159,9 +159,9 @@ def test_dashboard_token_protects_html_api_static_and_sse(tmp_path):
     )
 
     assert client.get("/").status_code == 200
-    assert "Login" in client.get("/").text
+    assert "A2A Bridge Dashboard" in client.get("/").text
     assert client.get("/app.js").status_code == 200
-    assert "Login" in client.get("/app.js").text
+    assert "A2A Bridge Dashboard" in client.get("/app.js").text
     assert client.get("/api/tasks").status_code == 401
     assert client.get("/api/tasks/events").status_code == 401
 
@@ -172,6 +172,23 @@ def test_dashboard_token_protects_html_api_static_and_sse(tmp_path):
     assert client.get("/").text == "<html>dashboard</html>"
     assert client.get("/app.js").text == "console.log('dashboard')"
     assert client.get("/api/tasks").status_code == 200
+
+
+def test_dashboard_login_is_accessible_and_does_not_echo_invalid_tokens():
+    client = TestClient(build_dashboard_app(fake_registry(), ActivityLog(), bearer_token="test-token"))
+
+    form = client.get("/login")
+    assert form.status_code == 200
+    assert '<label for="dashboard-token">Dashboard token</label>' in form.text
+    assert 'autocomplete="current-password"' in form.text
+    assert 'name="token"' in form.text
+    assert 'value=' not in form.text
+
+    failed = client.post("/login", data={"token": "wrong-token"})
+    assert failed.status_code == 401
+    assert 'role="alert"' in failed.text
+    assert "Invalid dashboard token" in failed.text
+    assert "wrong-token" not in failed.text
 
 
 def test_dashboard_token_accepts_bearer_header_without_logging_in():

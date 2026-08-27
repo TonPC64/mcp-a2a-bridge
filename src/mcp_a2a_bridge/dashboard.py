@@ -29,6 +29,25 @@ DIST_DIR = _PACKAGE_DIST_DIR if _PACKAGE_DIST_DIR.is_dir() else _SOURCE_DIST_DIR
 _QUEUE_POLL_INTERVAL_SECONDS = 0.2
 
 
+def _login_page(error: bool = False) -> str:
+    error_message = (
+        '<p class="login-error" id="login-error" role="alert">Invalid dashboard token. Try again.</p>'
+        if error
+        else ""
+    )
+    described_by = ' aria-describedby="login-error"' if error else ""
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · A2A Bridge Dashboard</title><style>
+:root {{ color:#edf6ff; background:#071226; font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-synthesis:none; }}
+* {{ box-sizing:border-box; }} body {{ display:grid; min-width:320px; min-height:100vh; place-items:center; margin:0; padding:1.25rem; background:radial-gradient(circle at 12% -5%,#37d7ff36,transparent 34rem),radial-gradient(circle at 90% 12%,#9b75ff30,transparent 30rem),linear-gradient(135deg,#061024,#10284a 52%,#091a34); }}
+body::before {{ position:fixed; z-index:-1; inset:0; content:""; background-image:linear-gradient(#c7efff08 1px,transparent 1px),linear-gradient(90deg,#c7efff08 1px,transparent 1px); background-size:42px 42px; mask-image:linear-gradient(to bottom,black,transparent 76%); }}
+.login-card {{ width:min(100%,28rem); padding:clamp(1.5rem,7vw,2.5rem); border:1px solid #d8f4ff36; border-radius:1.5rem; background:linear-gradient(125deg,#e9faff16,#a6dfff0a 48%,#a58dff13); box-shadow:inset 0 1px #ffffff38,inset 0 -1px #000b,0 1.8rem 4rem #0000005c,0 0 2.5rem #75c9ff0a; backdrop-filter:blur(28px) saturate(140%); }}
+.eyebrow {{ margin:0 0 .65rem; color:#9bdcf5; font-size:.68rem; font-weight:800; letter-spacing:.15em; text-transform:uppercase; }} h1 {{ margin:0; font-size:clamp(2rem,9vw,3.2rem); line-height:.95; letter-spacing:-.06em; }} .lede {{ margin:1rem 0 1.75rem; color:#c2d2e5; line-height:1.55; }} form {{ display:grid; gap:.65rem; }} label {{ color:#dff7ff; font-size:.88rem; font-weight:750; }} input {{ width:100%; min-height:3rem; padding:.7rem .8rem; border:1px solid #b6eeec55; border-radius:.7rem; color:#edf6ff; background:#020c1f8c; font:inherit; }} input:focus-visible,button:focus-visible {{ outline:2px solid #a5eaff; outline-offset:3px; }} button {{ min-height:3rem; margin-top:.5rem; border:1px solid #b6eeec88; border-radius:.7rem; color:#071226; background:#a5eaff; box-shadow:inset 0 1px #fff8,0 .6rem 1.8rem #0006; font:inherit; font-weight:800; cursor:pointer; }} button:hover {{ background:#c3f2ff; }} .login-error {{ margin:.25rem 0 .5rem; padding:.7rem .8rem; border:1px solid #ff9da35c; border-radius:.65rem; color:#ffcbd0; background:#ff68751c; line-height:1.4; }} .hint {{ margin:1.2rem 0 0; color:#9bb5c9; font-size:.78rem; line-height:1.5; }}
+@media (max-width:420px) {{ body {{ padding:.75rem; }} .login-card {{ border-radius:1.15rem; }} }} @media (prefers-reduced-motion:reduce) {{ * {{ transition-duration:.01ms!important; }} }}
+</style></head><body><main class="login-card"><p class="eyebrow">Live operations</p><h1>A2A Bridge Dashboard</h1><p class="lede">Enter the dashboard token to view your connected agents and live activity.</p>{error_message}<form method="post"><label for="dashboard-token">Dashboard token</label><input id="dashboard-token" name="token" type="password" autocomplete="current-password" required autofocus{described_by}><button type="submit">Sign in</button></form><p class="hint">Your token is never stored in this form.</p></main></body></html>"""
+
+
 async def _wait_for_next(subscriber: "queue.Queue[dict]") -> dict:
     """Block for the next published snapshot without wedging a worker thread.
 
@@ -75,13 +94,13 @@ def build_dashboard_app(
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_form() -> str:
-        return """<!doctype html><title>Dashboard login</title><form method="post"><label>Token <input name="token" type="password" required autofocus></label><button>Login</button></form>"""
+        return _login_page()
 
     @app.post("/login")
     async def login(request: Request):
         token = parse_qs((await request.body()).decode()).get("token", [""])[0]
         if not bearer_token or not secrets.compare_digest(token, bearer_token):
-            return JSONResponse({"detail": "Invalid dashboard token"}, status_code=401)
+            return HTMLResponse(_login_page(error=True), status_code=401)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(
             "dashboard_token",

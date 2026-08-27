@@ -23,6 +23,7 @@ class MockEventSource {
 
 describe("App", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     MockEventSource.instances = [];
   });
@@ -45,6 +46,17 @@ describe("App", () => {
     expect(screen.getByText("A2A Bridge Dashboard")).toBeInTheDocument();
     expect(screen.getAllByText("planner")).toHaveLength(2);
     expect(screen.getByText("done")).toBeInTheDocument();
+  });
+
+  it("uses mock snapshots without opening live event streams when enabled", () => {
+    vi.stubEnv("VITE_USE_MOCK_DATA", "true");
+    vi.stubGlobal("EventSource", MockEventSource);
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "Release coordinator" })).toBeInTheDocument();
+    expect(screen.getByText("Mock data")).toBeInTheDocument();
+    expect(MockEventSource.instances).toHaveLength(0);
   });
 
   it("updates each agent's task count when a task snapshot changes", async () => {

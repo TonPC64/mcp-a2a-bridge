@@ -34,7 +34,11 @@ npm --prefix dashboard run build
 uv run mcp-a2a-bridge-dashboard
 ```
 
-Set `A2A_BRIDGE_DASHBOARD=1` on bridge processes whose activity should appear in the dashboard. The dashboard defaults to `127.0.0.1:9100`. For a non-loopback bind, set a strong `A2A_BRIDGE_DASHBOARD_TOKEN`; the service refuses non-loopback startup without one. Never expose the dashboard directly to the public internet; use TLS, authentication, and network controls.
+Set `A2A_BRIDGE_DASHBOARD=1` on bridge processes whose activity should appear in the dashboard. The dashboard defaults to `127.0.0.1:9100`. A non-loopback bind without a token is for trusted LANs only; use a strong `A2A_BRIDGE_DASHBOARD_TOKEN`, TLS, and network controls for protected access. Never expose the dashboard directly to the public internet.
+
+For frontend-only screenshots, run `npm --prefix dashboard ci` then
+`npm --prefix dashboard run dev:mock -- --host 0.0.0.0`. This opt-in mode uses
+local mock snapshots instead of the dashboard API/SSE; normal builds stay live.
 
 ## Agent rules
 

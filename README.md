@@ -172,6 +172,21 @@ uv run mcp-a2a-bridge-dashboard
 It listens only on `127.0.0.1:9100` by default. Open
 `http://127.0.0.1:9100` on the same machine.
 
+### Frontend mock data
+
+To run the dashboard UI without the Python service or SSE, use the opt-in mock
+mode. It includes representative agents and task activity for screenshots:
+
+```bash
+cd /absolute/path/to/mcp-a2a-bridge/dashboard
+npm ci
+npm run dev:mock -- --host 0.0.0.0
+```
+
+Open the Vite URL on the same network. `VITE_USE_MOCK_DATA=true` is only used
+by the frontend build/dev server; normal `npm run dev` and production builds
+continue to use the live dashboard API and SSE.
+
 Enable reporting for every bridge process whose activity should appear in the
 dashboard. Add this environment variable to the MCP server configuration (or
 when launching it manually):
@@ -191,15 +206,18 @@ in the shared dashboard. The dashboard can start before or after them.
 | `A2A_BRIDGE_ACTIVITY_SOURCE` | `remote` | Source label for activity written by compatible processes |
 | `A2A_BRIDGE_DASHBOARD_HOST` | `127.0.0.1` | Dashboard bind address |
 | `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Dashboard port |
-| `A2A_BRIDGE_DASHBOARD_TOKEN` | unset (off) | Bearer token that protects the dashboard and API |
+| `A2A_BRIDGE_DASHBOARD_TOKEN` | unset (off) | Optional bearer token that protects the dashboard and API |
 | `A2A_BRIDGE_HERMES_AUDIT` | unset | Read-only override for Hermes' `a2a_audit.jsonl` |
 | `HERMES_HOME` | unset | Used to find `$HERMES_HOME/a2a_audit.jsonl` when no override is set |
 
 ### LAN deployment
 
-Only expose the dashboard deliberately. Set a strong token and an explicit
-non-loopback bind, then put it behind a TLS-terminating reverse proxy with its
-own network access controls:
+The dashboard can be exposed deliberately on a trusted LAN without a token by
+setting an explicit non-loopback bind. This mode has no authentication, so use
+it only on a private, trusted network; never expose it to the public internet.
+
+For protected LAN access, set a strong token and put the service behind a
+TLS-terminating reverse proxy with its own network access controls:
 
 ```bash
 export A2A_BRIDGE_DASHBOARD_HOST=0.0.0.0

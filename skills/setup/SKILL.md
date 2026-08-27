@@ -31,7 +31,7 @@ Use this workflow when installing or starting this project. Choose MCP-only unle
 4. Register `uv run --directory /absolute/path/to/mcp-a2a-bridge mcp-a2a-bridge` with the selected MCP host.
 5. For the dashboard profile, run `npm --prefix dashboard ci`, `npm --prefix dashboard run build`, then `uv run mcp-a2a-bridge-dashboard`.
 6. Enable activity reporting with `A2A_BRIDGE_DASHBOARD=1` on each bridge process that should appear.
-7. Use loopback by default. For LAN access, explicitly set `A2A_BRIDGE_DASHBOARD_HOST`, set `A2A_BRIDGE_DASHBOARD_TOKEN`, and put the service behind TLS and network controls.
+7. Use loopback by default. For trusted tokenless LAN access, explicitly set `A2A_BRIDGE_DASHBOARD_HOST`; otherwise set `A2A_BRIDGE_DASHBOARD_TOKEN` and put the service behind TLS and network controls.
 
 ## Verification
 
@@ -43,6 +43,6 @@ Use this workflow when installing or starting this project. Choose MCP-only unle
 ## Pitfalls
 
 - MCP-only does not need Node/npm.
-- Do not bind the unauthenticated dashboard to a non-loopback address.
+- A tokenless non-loopback dashboard is only for trusted LANs; never expose it to the public internet.
 - Build the frontend after source changes; the Python service serves `dashboard/dist`.
 - Do not copy personal paths or real tokens from examples.

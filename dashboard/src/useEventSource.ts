@@ -5,10 +5,11 @@ interface EventSourceState<T> {
   error: string | null;
 }
 
-export function useEventSource<T>(path: string, event: string): EventSourceState<T> {
-  const [state, setState] = useState<EventSourceState<T>>({ data: null, error: null });
+export function useEventSource<T>(path: string, event: string, initialData?: T): EventSourceState<T> {
+  const [state, setState] = useState<EventSourceState<T>>({ data: initialData ?? null, error: null });
 
   useEffect(() => {
+    if (initialData) return;
     const source = new EventSource(path);
 
     const onMessage = (message: MessageEvent<string>) => {
@@ -25,7 +26,7 @@ export function useEventSource<T>(path: string, event: string): EventSourceState
     source.addEventListener(event, onMessage);
     source.onerror = onError;
     return () => source.close();
-  }, [event, path]);
+  }, [event, initialData, path]);
 
   return state;
 }

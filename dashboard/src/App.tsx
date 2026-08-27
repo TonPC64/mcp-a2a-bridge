@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { AgentList, type Agent } from "./AgentList";
+import { mockAgents, mockTasks } from "./mockDashboardData";
 import { TaskList, type TaskActivity } from "./TaskList";
 import { useEventSource } from "./useEventSource";
 
 export default function App() {
   const [showJumpToTop, setShowJumpToTop] = useState(false);
-  const agents = useEventSource<{ agents: Agent[] }>("/api/agents/events", "agents");
-  const tasks = useEventSource<{ tasks: TaskActivity[] }>("/api/tasks/events", "tasks");
+  const useMockData = import.meta.env.VITE_USE_MOCK_DATA === "true";
+  const agents = useEventSource<{ agents: Agent[] }>("/api/agents/events", "agents", useMockData ? { agents: mockAgents } : undefined);
+  const tasks = useEventSource<{ tasks: TaskActivity[] }>("/api/tasks/events", "tasks", useMockData ? { tasks: mockTasks } : undefined);
   const reconnecting = Boolean(agents.error || tasks.error);
   const agentsLoading = agents.data === null && !agents.error;
   const tasksLoading = tasks.data === null && !tasks.error;
@@ -26,7 +28,7 @@ export default function App() {
           <h1>A2A Bridge Dashboard</h1>
           <p className="lede">A clear view of your connected agents and the work moving between them.</p>
         </div>
-        <p className={`live-indicator${reconnecting ? " reconnecting" : ""}`}><span aria-hidden="true" />{reconnecting ? "Reconnecting" : "Live updates"}</p>
+        <p className={`live-indicator${reconnecting ? " reconnecting" : ""}`}><span aria-hidden="true" />{reconnecting ? "Reconnecting" : useMockData ? "Mock data" : "Live updates"}</p>
       </header>
 
       <section className="glass-panel" aria-labelledby="agents-heading" aria-busy={agentsLoading}>

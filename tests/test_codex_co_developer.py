@@ -134,9 +134,10 @@ async def test_codex_executor_sends_heartbeats_until_completion(monkeypatch):
 
 async def test_codex_executor_records_received_and_completed_activity(monkeypatch):
     class FakeProcess:
-        returncode = 0
+        returncode = None
 
         async def communicate(self):
+            self.returncode = 0
             return b"done", b""
 
         async def wait(self):
@@ -181,6 +182,7 @@ async def test_codex_executor_records_received_and_completed_activity(monkeypatc
 
     monkeypatch.setattr(codex_module, "TaskUpdater", FakeUpdater)
     monkeypatch.setattr(codex_module.asyncio, "create_subprocess_exec", create_process)
+    monkeypatch.setattr(codex_module, "CODEX_BIN", sys.executable)
     writer = Writer()
     context = SimpleNamespace(
         current_task=Task(id="t1", context_id="c1"),

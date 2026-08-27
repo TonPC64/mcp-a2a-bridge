@@ -1,60 +1,88 @@
 # mcp-a2a-bridge
 
 An MCP server that lets coding agents — GitHub Copilot CLI, Claude Code, Codex,
-and Hermes — call remote [A2A](https://a2a-protocol.org) agents.
+and Hermes — call remote [A2A](https://a2a-protocol.org) agents. It also
+includes an optional read-only activity dashboard.
 
-The bridge is an A2A client and the active home for the bundled Copilot A2A
-server.
+## Getting started
 
-## Requirements
+### Prerequisites
 
-- Python 3.11+
+- Python 3.11 or later
 - [`uv`](https://docs.astral.sh/uv/)
+- Node.js and npm **only** when developing the dashboard frontend
 
-## Install
+Clone the repository and create an editable development installation:
 
 ```bash
-cd ~/WorkSpace/mcp-a2a-bridge
+git clone <repository-url> mcp-a2a-bridge
+cd mcp-a2a-bridge
 uv venv --python 3.11
 uv pip install -e ".[dev]"
 ```
 
-## Configure agents
+The commands below use `/absolute/path/to/mcp-a2a-bridge`. Replace it with
+the absolute path to your clone; do not copy another user's path.
 
-The registry is shared by every host. Resolution order:
+### Configure A2A agents
 
-1. `$A2A_BRIDGE_CONFIG`
-2. `./.a2a-agents.json` in the current directory
-3. `~/.config/a2a-bridge/agents.json`
+Create `.a2a-agents.json` in the repository root:
 
 ```json
 {
   "agents": {
-    "planner": {
-      "url": "http://localhost:9001",
-      "headers": {}
+    "example-agent": {
+      "url": "https://agent.example.invalid",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_YOUR_TOKEN"
+      }
     }
   }
 }
 ```
 
-`url` is the agent's base URL; the bridge appends
-`/.well-known/agent-card.json`. You can also add agents at runtime with the
-`a2a_add_agent` tool, which writes back to this file.
+Use the base URL of an A2A agent; the bridge requests its
+`/.well-known/agent-card.json` automatically. Remove `Authorization` (or use
+an empty `headers` object) when the agent does not require authentication.
+The registry can contain secrets, so do not commit it and restrict its file
+permissions where appropriate.
 
-## Register with your host
+The registry location is resolved in this order:
 
-All four hosts run the same command.
+1. `A2A_BRIDGE_CONFIG`
+2. `.a2a-agents.json` in the bridge process's current directory
+3. `~/.config/a2a-bridge/agents.json`
 
-**GitHub Copilot CLI** — add to `~/.copilot/mcp-config.json`:
+For a host that starts the MCP command outside the repository, set
+`A2A_BRIDGE_CONFIG` to an absolute path in that host's MCP environment. You
+can also add a verified agent at runtime with `a2a_add_agent`; by default it
+writes to the resolved registry file.
+
+### Register the MCP server
+
+Each host should start the same local checkout command:
+
+```text
+uv run --directory /absolute/path/to/mcp-a2a-bridge mcp-a2a-bridge
+```
+
+This uses the editable installation created above. Configure the host with
+the following portable path placeholder.
+
+**GitHub Copilot CLI** — add this server to `~/.copilot/mcp-config.json`:
 
 ```json
 {
   "mcpServers": {
     "a2a": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["--from", "/Users/YOU/WorkSpace/mcp-a2a-bridge", "mcp-a2a-bridge"]
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/absolute/path/to/mcp-a2a-bridge",
+        "mcp-a2a-bridge"
+      ]
     }
   }
 }
@@ -63,24 +91,26 @@ All four hosts run the same command.
 **Claude Code:**
 
 ```bash
-claude mcp add a2a -- uvx --from ~/WorkSpace/mcp-a2a-bridge mcp-a2a-bridge
+claude mcp add a2a -- uv run --directory /absolute/path/to/mcp-a2a-bridge mcp-a2a-bridge
 ```
 
-**Codex** — add to `~/.codex/config.toml`:
+**Codex** — add this to `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.a2a]
-command = "uvx"
-args = ["--from", "/Users/YOU/WorkSpace/mcp-a2a-bridge", "mcp-a2a-bridge"]
+command = "uv"
+args = ["run", "--directory", "/absolute/path/to/mcp-a2a-bridge", "mcp-a2a-bridge"]
 ```
 
-**Hermes:**
+**Hermes:** use its MCP server registration UI or command, choose a `stdio`
+server, and supply the command `uv` with these arguments:
 
-```bash
-hermes mcp add
+```text
+run --directory /absolute/path/to/mcp-a2a-bridge mcp-a2a-bridge
 ```
 
-Choose a stdio server and supply the same command and args.
+Restart the host after registration, then call `a2a_list_agents` to confirm
+that the registry is available and the agents are reachable.
 
 ## Tools
 
@@ -92,111 +122,103 @@ Choose a stdio server and supply the same command and args.
 | `a2a_cancel_task` | Cancel a running task |
 | `a2a_add_agent` | Register an agent by URL |
 
-### Long-running tasks
-
-`a2a_send_message` blocks up to `timeout_s` (default 60). If the agent is still
-working it returns `done: false` with a `task_id`; poll `a2a_get_task`. It never
-hangs the host.
-
-### Multi-turn
-
-An agent that returns `state: "input_required"` is answered by calling
+`a2a_send_message` waits up to `timeout_s` (60 seconds by default). If a task
+is still running, it returns `done: false` with a `task_id`; poll it with
+`a2a_get_task`. If an agent returns `state: "input_required"`, call
 `a2a_send_message` again with the same `task_id`.
 
 ## Dashboard
 
-A standalone, read-only web dashboard shows configured agents' status/skills
-and a live, rolling history of task activity from *every* `mcp-a2a-bridge`
-process on the machine — Copilot's, Hermes', or any other MCP host's. It also
-includes Hermes native A2A exchanges, including work received from other
-agents. It runs as its own long-lived process, independent of any bridge, so multiple devices
-on the same local network can view it at once. It uses Server-Sent Events
-(SSE) to push updates: `/api/agents/events` emits `agents` events with
-`{ "agents": [...] }`, and `/api/tasks/events` emits `tasks` events with
-`{ "tasks": [...] }`.
+The optional standalone dashboard shows configured agents, their
+status/skills, and live task activity from bridge processes on the same
+machine. It is read-only: it never sends messages to agents.
 
-Build the frontend once:
-
-    cd dashboard
-    npm install
-    npm run build
-
-Start the dashboard (once, independent of any bridge):
-
-    mcp-a2a-bridge-dashboard
-
-For macOS, use the included `launchd/com.example.a2a-bridge-dashboard.plist`
-(template placeholders: `__REPO__` and `__HOME__`) so the dashboard is restarted
-at login and after crashes. Install it as `~/Library/LaunchAgents/com.chanwit.a2a-bridge-dashboard.plist`,
-then load it with `launchctl bootstrap gui/$(id -u) <plist-path>`. Do not rely
-on a bridge process to host the dashboard; bridge processes are independently
-started and stopped by MCP clients.
-
-Then enable each bridge process to report into the shared activity store:
-
-    A2A_BRIDGE_DASHBOARD=1 mcp-a2a-bridge
-
-| Env var | Default | Purpose |
-|---|---|---|
-| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` on a bridge or Copilot server process to persist its activity into the shared SQLite store |
-| `A2A_BRIDGE_ACTIVITY_DB` | `~/.config/a2a-bridge/activity.sqlite3` | Path to the shared activity store, read by the dashboard process and written by every enabled bridge process |
-| `A2A_BRIDGE_DASHBOARD_HOST` | `0.0.0.0` | Host the dashboard HTTP server binds to |
-| `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Port for the dashboard HTTP server |
-| `A2A_BRIDGE_HERMES_AUDIT` | unset | Read-only override for Hermes' `a2a_audit.jsonl` |
-| `HERMES_HOME` | unset | When set and no override is present, reads `$HERMES_HOME/a2a_audit.jsonl` |
-
-Visit `http://<this-machine's-IP>:9100` from any device on the same local
-network. The dashboard is read-only — it never sends messages to agents.
-
-There is no authentication: this is a local-network-trust tool, like a Vite
-dev server. Do not expose it beyond a trusted LAN.
-
-Task activity is live across every bridge process that has
-`A2A_BRIDGE_DASHBOARD=1` set, because they all write into the same
-`A2A_BRIDGE_ACTIVITY_DB` file and the dashboard process polls it continuously.
-A bridge process without the flag set keeps its activity in memory only and
-is invisible to the dashboard (today's default, zero overhead).
-
-### Copilot A2A server
-
-Run the consolidated Copilot server (requires an authenticated `copilot` CLI):
-
-```sh
-copilot-a2a-agent --port 9002 --cwd /path/to/default/repo
-```
-
-It binds only to `127.0.0.1` because it runs Copilot with `--allow-all-tools`.
-Incoming activity uses the same opt-in shared SQLite store and is shown with
-`source` and `destination` fields in the dashboard. To run it at login on
-macOS, substitute `__REPO__`, `__HOME__`, and `__DEFAULT_CWD__` in
-`launchd/com.example.copilot-a2a-agent.plist`, then bootstrap it with
-`launchctl bootstrap gui/$(id -u) <plist-path>`.
-
-The dashboard also polls Hermes' native audit file without modifying Hermes:
-`A2A_BRIDGE_HERMES_AUDIT`, then `$HERMES_HOME/a2a_audit.jsonl`, then
-`~/.hermes/a2a_audit.jsonl`. It reads only a bounded tail, skips malformed or
-in-progress JSONL rows, exposes outbound calls as `hermes:<task_id>` with
-`state: "recorded"`, and truncates/redacts credential-like summary fragments.
-An audit record proves a call was recorded, not that its remote task completed;
-inbound Hermes records and full request/response contents are intentionally not
-shown.
-
-A bridge never fails an A2A tool call because of the dashboard. If a shared
-store write fails (for example two bridges contending for the SQLite file),
-the bridge logs one line to stderr, pauses shared-store writes for 30s, and
-then resumes on its own, so a momentary hiccup costs you a little activity
-history rather than a working call.
-
-Upgrading from an older version: bridges used to serve their own embedded
-per-bridge dashboard over HTTP; they no longer do, so if you previously
-visited a per-bridge dashboard URL, run `mcp-a2a-bridge-dashboard` once
-instead.
-
-## Development
+Start it after installing the project:
 
 ```bash
-.venv/bin/pytest -v
+cd /absolute/path/to/mcp-a2a-bridge
+uv run mcp-a2a-bridge-dashboard
 ```
 
-`tests/test_integration.py` runs a real A2A agent in-process and exercises the
+It listens on port `9100` by default. Open `http://127.0.0.1:9100` on the
+same machine, or `http://<machine-ip>:9100` from a trusted local network.
+
+Enable reporting for every bridge process whose activity should appear in the
+dashboard. Add this environment variable to the MCP server configuration (or
+when launching it manually):
+
+```bash
+A2A_BRIDGE_DASHBOARD=1 uv run --directory /absolute/path/to/mcp-a2a-bridge mcp-a2a-bridge
+```
+
+Bridge processes without that flag keep activity in memory and do not appear
+in the shared dashboard. The dashboard can start before or after them.
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `A2A_BRIDGE_CONFIG` | — | Absolute path to the agents JSON registry |
+| `A2A_BRIDGE_DASHBOARD` | unset (off) | Set to `1` to persist this bridge process's activity |
+| `A2A_BRIDGE_ACTIVITY_DB` | `~/.config/a2a-bridge/activity.sqlite3` | Shared SQLite activity database |
+| `A2A_BRIDGE_ACTIVITY_SOURCE` | `remote` | Source label for activity written by compatible processes |
+| `A2A_BRIDGE_DASHBOARD_HOST` | `0.0.0.0` | Dashboard bind address |
+| `A2A_BRIDGE_DASHBOARD_PORT` | `9100` | Dashboard port |
+| `A2A_BRIDGE_HERMES_AUDIT` | unset | Read-only override for Hermes' `a2a_audit.jsonl` |
+| `HERMES_HOME` | unset | Used to find `$HERMES_HOME/a2a_audit.jsonl` when no override is set |
+
+**Security warning:** the dashboard is currently unauthenticated and, by
+default, binds to all network interfaces. Treat it as local-network-only. Do
+not expose it to the public internet without authentication, TLS, and network
+access controls. For a single-machine setup, bind it to loopback with
+`A2A_BRIDGE_DASHBOARD_HOST=127.0.0.1`.
+
+For macOS, the `launchd/com.example.a2a-bridge-dashboard.plist` template can
+run the dashboard at login. Replace its `__REPO__` and `__HOME__` placeholders
+before installing it as a LaunchAgent.
+
+### Dashboard frontend development
+
+Node.js/npm are only required to work on the frontend or rebuild its bundled
+assets:
+
+```bash
+cd /absolute/path/to/mcp-a2a-bridge/dashboard
+npm install
+npm run dev
+```
+
+Vite prints the development URL (normally `http://localhost:5173`). Build the
+assets consumed by the Python dashboard with `npm run build`.
+
+## Copilot A2A server
+
+The bundled server requires an authenticated `copilot` CLI:
+
+```bash
+copilot-a2a-agent --port 9002 --cwd /path/to/default/repository
+```
+
+It binds to `127.0.0.1` because it runs Copilot with `--allow-all-tools`.
+Its incoming activity can use the same opt-in shared SQLite store and is
+shown with source and destination fields in the dashboard.
+
+The dashboard can also read Hermes' native audit file without modifying
+Hermes. It checks `A2A_BRIDGE_HERMES_AUDIT`, then
+`$HERMES_HOME/a2a_audit.jsonl`, then `~/.hermes/a2a_audit.jsonl`.
+
+## Development and tests
+
+Run the Python test suite from the repository root:
+
+```bash
+uv run pytest -v
+```
+
+Run dashboard tests or make a production dashboard build from `dashboard/`:
+
+```bash
+npm test
+npm run build
+```
+
+`tests/test_integration.py` runs an A2A agent in-process and exercises the
 bridge end to end.

@@ -93,13 +93,17 @@ def build_dashboard_app(
         return RedirectResponse("/login", status_code=303)
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_form() -> str:
+    async def login_form():
+        if not bearer_token:
+            return RedirectResponse("/", status_code=303)
         return _login_page()
 
     @app.post("/login")
     async def login(request: Request):
+        if not bearer_token:
+            return RedirectResponse("/", status_code=303)
         token = parse_qs((await request.body()).decode()).get("token", [""])[0]
-        if not bearer_token or not secrets.compare_digest(token, bearer_token):
+        if not secrets.compare_digest(token, bearer_token):
             return HTMLResponse(_login_page(error=True), status_code=401)
         response = RedirectResponse("/", status_code=303)
         response.set_cookie(

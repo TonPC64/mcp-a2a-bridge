@@ -191,6 +191,19 @@ def test_dashboard_login_is_accessible_and_does_not_echo_invalid_tokens():
     assert "wrong-token" not in failed.text
 
 
+def test_dashboard_login_redirects_without_a_token():
+    """Removing the no-token branch must not restore the login credential path."""
+    client = TestClient(build_dashboard_app(fake_registry(), ActivityLog()))
+
+    form = client.get("/login", follow_redirects=False)
+    submitted = client.post("/login", content="not-a-form", follow_redirects=False)
+
+    assert form.status_code == 303
+    assert submitted.status_code == 303
+    assert form.headers["location"] == "/"
+    assert submitted.headers["location"] == "/"
+
+
 def test_dashboard_token_accepts_bearer_header_without_logging_in():
     app = build_dashboard_app(fake_registry(), ActivityLog(), bearer_token="test-token")
     client = TestClient(app)

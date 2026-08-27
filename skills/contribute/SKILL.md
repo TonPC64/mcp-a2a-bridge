@@ -17,7 +17,7 @@ Use this workflow for any code, dependency, documentation, or dashboard change. 
 
 ## Procedure
 
-1. Read `AGENTS.md`, `AI_README.md`, and the relevant source/tests before editing.
+1. Read `AGENTS.md` and the relevant source/tests before editing.
 2. Check `git status --short --branch`, identify the base branch, and preserve unrelated work.
 3. Make the smallest change that satisfies the request. Do not add credentials, personal paths, generated screenshots, or unrelated dependencies.
 4. Add or update tests for behavior changes. Preserve public APIs, MCP tool contracts, and SSE event shapes.

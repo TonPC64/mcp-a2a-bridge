@@ -115,6 +115,9 @@ async def test_codex_executor_sends_heartbeats_until_completion(monkeypatch):
     monkeypatch.setattr(codex_module, "TaskUpdater", FakeUpdater)
     monkeypatch.setattr(codex_module.asyncio, "create_subprocess_exec", create_process)
     monkeypatch.setattr(codex_module, "HEARTBEAT_SECONDS", 0.01)
+    # The test supplies a fake subprocess, so it must not depend on the
+    # optional Codex CLI being installed on the test runner.
+    monkeypatch.setattr(codex_module, "CODEX_BIN", sys.executable)
     executor = codex_module.CodexExecutor()
     context = SimpleNamespace(
         current_task=Task(id="t1", context_id="c1"),

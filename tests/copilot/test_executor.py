@@ -4,9 +4,8 @@ import pytest
 from a2a.helpers import new_text_message
 from a2a.types import Message, Role, Task, TaskState
 
-from copilot_a2a_agent import executor as executor_mod
-from copilot_a2a_agent.executor import CopilotExecutor
-from copilot_a2a_agent.runner import CopilotResult, RunnerError
+import run_copilot_main_dev as executor_mod
+from run_copilot_main_dev import CopilotExecutor, CopilotResult, RunnerError
 
 
 class RecordingQueue:

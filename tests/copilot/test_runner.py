@@ -1,6 +1,6 @@
 import pytest
 
-from copilot_a2a_agent.runner import CopilotResult, apply_event, build_argv, event_progress, parse_line, session_uuid, split_cwd
+from run_copilot_main_dev import CopilotResult, apply_event, build_argv, event_progress, parse_line, session_uuid, split_cwd
 
 ASSISTANT_MESSAGE = '{"type":"assistant.message","data":{"messageId":"21762f90","model":"claude-opus-5","content":"pong","toolRequests":[],"turnId":"0"},"id":"41a4e0cd"}'
 RESULT = '{"type":"result","sessionId":"1e23377d-fcd1-43a0-814c-d96c298f8d41","exitCode":0,"usage":{"codeChanges":{"filesModified":["src/app.py"]}}}'
@@ -81,7 +81,7 @@ class FakeProcess:
 
 @pytest.mark.anyio
 async def test_run_copilot_accepts_json_lines_larger_than_stream_limit(monkeypatch):
-    import copilot_a2a_agent.runner as runner
+    import run_copilot_main_dev as runner
     process = FakeProcess(("{\"type\":\"assistant.message\",\"data\":{\"content\":\"" + "x" * 100_000 + "\"}}\n{\"type\":\"result\",\"exitCode\":0}\n").encode())
     async def create_process(*args, **kwargs): return process
     monkeypatch.setattr(runner.asyncio, "create_subprocess_exec", create_process)
@@ -90,7 +90,7 @@ async def test_run_copilot_accepts_json_lines_larger_than_stream_limit(monkeypat
 
 @pytest.mark.anyio
 async def test_run_copilot_drains_stderr_while_reading_events(monkeypatch):
-    import copilot_a2a_agent.runner as runner
+    import run_copilot_main_dev as runner
 
     process = FakeProcess(b'{"type":"result","exitCode":0}\n', b"Copilot diagnostic\n")
 

@@ -273,10 +273,10 @@ assets consumed by the Python dashboard with `npm run build`.
 
 ## Copilot A2A server
 
-The bundled server requires an authenticated `copilot` CLI:
+The optional Copilot example requires an authenticated `copilot` CLI:
 
 ```bash
-copilot-a2a-agent --port 9002 --cwd /path/to/default/repository
+PYTHONPATH=examples:src python examples/run_copilot_main_dev.py 9010 --cwd /path/to/default/repository
 ```
 
 It binds to `127.0.0.1` because it runs Copilot with `--allow-all-tools`.

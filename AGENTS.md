@@ -9,7 +9,7 @@ Read it before changing code, then read the relevant skill:
 ## Project map
 
 - `src/mcp_a2a_bridge/` — core MCP bridge, A2A client, registry, activity store, optional dashboard backend.
-- `src/copilot_a2a_agent/` — bundled Copilot A2A server.
+- `examples/copilot_a2a_agent/` — optional Copilot A2A server example.
 - `dashboard/` — optional React/Vite dashboard frontend.
 - `tests/` — Python tests, including integration coverage.
 - `.github/workflows/ci.yml` — CI for Python and dashboard.

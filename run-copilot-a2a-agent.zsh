@@ -30,4 +30,7 @@ if (( ! _litellm_ready )); then
   exit 75
 fi
 
-exec /Users/chanwit/WorkSpace/mcp-a2a-bridge/.venv/bin/copilot-a2a-agent --port 9010 --cwd /Users/chanwit/WorkSpace
+export PYTHONPATH="/Users/chanwit/WorkSpace/mcp-a2a-bridge/examples:/Users/chanwit/WorkSpace/mcp-a2a-bridge/src${PYTHONPATH:+:$PYTHONPATH}"
+exec /Users/chanwit/WorkSpace/mcp-a2a-bridge/.venv/bin/python \
+  /Users/chanwit/WorkSpace/mcp-a2a-bridge/examples/run_copilot_main_dev.py \
+  --port 9010 --cwd /Users/chanwit/WorkSpace

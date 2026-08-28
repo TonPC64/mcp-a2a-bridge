@@ -1,4 +1,4 @@
-"""Claude Code reviewer exposed as an A2A agent on port 9010."""
+"""Claude Code reviewer exposed as an A2A agent on port 9011."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from mcp_a2a_bridge.activity_writer import ActivityWriter, build_activity_writer
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill, Part
 from fastapi import FastAPI
 
-PORT = 9010
+PORT = 9011
 DEFAULT_WORKSPACE = Path.home() / "WorkSpace"
 REVIEW_TIMEOUT_SECONDS = 900
 HEARTBEAT_SECONDS = 15
@@ -120,7 +120,7 @@ async def _preflight_prompt(prompt: str) -> tuple[str, bool]:
 
 def build_card(port: int = PORT) -> AgentCard:
     return AgentCard(
-        name="claude-reviewer",
+        name="claude_reviewer",
         description="Claude Code acting as a code reviewer",
         version="1.0.0",
         supported_interfaces=[
@@ -149,7 +149,7 @@ class ClaudeReviewerExecutor(AgentExecutor):
     def __init__(self, activity_writer: ActivityWriter | None = None) -> None:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._cancelled: set[str] = set()
-        self._activity_writer = activity_writer if activity_writer is not None else build_activity_writer("claude-reviewer")
+        self._activity_writer = activity_writer if activity_writer is not None else build_activity_writer("claude_reviewer")
 
     def _record_activity(self, task_id: str, source: str, state: str, text: str) -> None:
         if self._activity_writer is None:

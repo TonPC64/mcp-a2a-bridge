@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from copilot_a2a_agent.card import build_card
 from copilot_a2a_agent.executor import CopilotExecutor
 
-DEFAULT_PORT = 9002
+DEFAULT_PORT = 9010
 
 
 def build_app(card: AgentCard, default_cwd: str, timeout_s: float = 1800) -> FastAPI:

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import socket
-
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
 
 
 def build_card(port: int, host: str = "127.0.0.1") -> AgentCard:
     return AgentCard(
-        name=f"copilot-{socket.gethostname()}",
+        name="copilot_main_dev",
         description="GitHub Copilot CLI — a coding agent that can read and edit files and run commands.",
         version="0.1.0",
         supported_interfaces=[AgentInterface(protocol_binding="JSONRPC", protocol_version="1.0", url=f"http://{host}:{port}/")],

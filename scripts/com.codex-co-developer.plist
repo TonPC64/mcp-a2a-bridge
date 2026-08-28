@@ -10,7 +10,7 @@
     <string>run</string>
     <string>python</string>
     <string>examples/run_codex_co_developer.py</string>
-    <string>9011</string>
+    <string>9012</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/chanwit/WorkSpace/mcp-a2a-bridge</string>

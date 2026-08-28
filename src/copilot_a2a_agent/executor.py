@@ -24,7 +24,7 @@ def format_reply(result: CopilotResult) -> str:
 class CopilotExecutor(AgentExecutor):
     def __init__(self, default_cwd: str, timeout_s: float = 1800) -> None:
         self._default_cwd, self._timeout_s = default_cwd, timeout_s
-        self._activity = build_activity_writer("copilot")
+        self._activity = build_activity_writer("copilot_main_dev")
 
     def _record(self, task_id: str, *, state: str, text: str, source: str = "remote") -> None:
         if self._activity:

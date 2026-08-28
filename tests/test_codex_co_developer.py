@@ -216,7 +216,7 @@ def test_codex_co_developer_publishes_an_a2a_agent_card():
             raise AssertionError("codex-co-developer did not publish an agent card")
 
         card = response.json()
-        assert card["name"] == "codex-co-developer"
+        assert card["name"] == "codex_co_dev"
         assert card["supportedInterfaces"][0]["url"] == f"http://127.0.0.1:{port}/"
     finally:
         process.terminate()

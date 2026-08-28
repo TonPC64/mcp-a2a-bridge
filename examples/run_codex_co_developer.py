@@ -70,7 +70,7 @@ HEARTBEAT_SECONDS = 15
 
 def build_card(port: int) -> AgentCard:
     return AgentCard(
-        name="codex-co-developer",
+        name="codex_co_dev",
         description="Codex CLI acting as a local coding co-developer",
         version="1.0.0",
         supported_interfaces=[
@@ -99,7 +99,7 @@ class CodexExecutor(AgentExecutor):
     def __init__(self, activity_writer: ActivityWriter | None = None) -> None:
         self._processes: dict[str, asyncio.subprocess.Process] = {}
         self._cancelled: set[str] = set()
-        self._activity_writer = activity_writer if activity_writer is not None else build_activity_writer("codex-co-developer")
+        self._activity_writer = activity_writer if activity_writer is not None else build_activity_writer("codex_co_dev")
 
     def _record_activity(self, task_id: str, source: str, state: str, text: str) -> None:
         if self._activity_writer is None:
@@ -130,7 +130,7 @@ class CodexExecutor(AgentExecutor):
         source = self._activity_writer.source_for(context) if self._activity_writer else "remote"
         self._record_activity(task.id, source, "working", "Task received.")
         if CODEX_BIN is None:
-            message = "Codex CLI is unavailable. Install it and restart codex-co-developer."
+            message = "Codex CLI is unavailable. Install it and restart codex_co_dev."
             await updater.failed(updater.new_agent_message([Part(text=message)]))
             self._record_activity(task.id, source, "failed", message)
             return
@@ -237,7 +237,7 @@ def build_app(card: AgentCard) -> FastAPI:
     handler = DefaultRequestHandler(
         agent_executor=CodexExecutor(),
         task_store=SQLiteTaskStore(
-            Path.home() / ".hermes" / "a2a" / "codex-co-developer.sqlite3"
+            Path.home() / ".hermes" / "a2a" / "codex_co_dev.sqlite3"
         ),
         agent_card=card,
     )
@@ -251,5 +251,5 @@ def build_app(card: AgentCard) -> FastAPI:
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 9011
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 9012
     uvicorn.run(build_app(build_card(port)), host="127.0.0.1", port=port, log_level="info")

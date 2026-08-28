@@ -6,6 +6,7 @@ import os
 import sys
 import uuid
 
+from mcp import types
 from mcp.server.mcpserver import MCPServer
 
 from mcp_a2a_bridge import client
@@ -21,6 +22,13 @@ INSTRUCTIONS = (
     "still working: poll a2a_get_task with that id. If it returns "
     'state="input_required", reply by calling a2a_send_message again with the '
     "same task_id."
+)
+SUPPORTED_PROTOCOL_VERSIONS = (
+    "2024-11-05",
+    "2025-03-26",
+    "2025-06-18",
+    "2025-11-25",
+    "2026-07-28",
 )
 
 
@@ -197,6 +205,24 @@ def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -
         summary["name"] = name
         summary["persisted"] = persist and registry.config_path is not None
         return summary
+
+    async def discover(_ctx, _params: types.RequestParams | None) -> types.DiscoverResult:
+        """Advertise both MCP eras to clients with legacy fallback behavior.
+
+        Copilot CLI probes with the modern ``server/discover`` request and may
+        retry with legacy ``initialize`` on the same stdio connection. The SDK
+        default advertises only the modern era, which makes that fallback look
+        like a modern-only server. Advertising the handshake era here lets
+        those clients select the legacy path while modern clients continue to
+        use the 2026 envelope protocol.
+        """
+        return types.DiscoverResult(
+            supported_versions=list(SUPPORTED_PROTOCOL_VERSIONS),
+            capabilities=server._lowlevel_server.get_capabilities(protocol_version=_ctx.protocol_version),
+            instructions=INSTRUCTIONS,
+        )
+
+    server._lowlevel_server.add_request_handler("server/discover", types.RequestParams, discover)
 
     return server
 

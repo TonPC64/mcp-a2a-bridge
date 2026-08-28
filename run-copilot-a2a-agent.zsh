@@ -30,4 +30,4 @@ if (( ! _litellm_ready )); then
   exit 75
 fi
 
-exec /Users/chanwit/WorkSpace/mcp-a2a-bridge/.venv/bin/copilot-a2a-agent --port 9002 --cwd /Users/chanwit/WorkSpace
+exec /Users/chanwit/WorkSpace/mcp-a2a-bridge/.venv/bin/copilot-a2a-agent --port 9010 --cwd /Users/chanwit/WorkSpace

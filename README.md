@@ -158,6 +158,27 @@ run --directory /absolute/path/to/mcp-a2a-bridge mcp-a2a-bridge
 Restart the host after registration, then call `a2a_list_agents` to confirm
 that the registry is available and the agents are reachable.
 
+### Expose the interactive Codex CLI as A2A (opt-in)
+
+With Codex CLI 0.150.1 installed, run this separate adapter in another
+terminal:
+
+```bash
+uv run python examples/run_codex_interactive_a2a.py
+```
+
+It binds only to `127.0.0.1:9013`, publishes
+`/.well-known/agent-card.json`, and registers a temporary unique entry in the
+resolved registry. The exact entry is removed on graceful shutdown. It starts
+`codex app-server --stdio` directly; it does not use `codex exec` or attach to
+an existing terminal TUI. Each adapter process starts one new ephemeral
+app-server thread. `--thread-id ID` may resume a known persisted thread only
+when app-server reports `canAcceptDirectInput: true`.
+
+Use `--port` for another loopback port and `--codex-bin` when `codex` is not on
+the launcher PATH. The adapter has no public bind, token, or credential-file
+configuration.
+
 ## Tools
 
 | Tool | Purpose |

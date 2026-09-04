@@ -6,8 +6,11 @@ import os
 import sys
 import uuid
 
+import anyio
 from mcp import types
 from mcp.server.mcpserver import MCPServer
+from mcp.server.runner import serve_loop
+from mcp.server.stdio import stdio_server
 
 from mcp_a2a_bridge import client
 from mcp_a2a_bridge.activity import ActivityLog
@@ -227,6 +230,20 @@ def build_server(registry: AgentRegistry, activity: ActivityLog | None = None) -
     return server
 
 
+async def run_legacy_stdio(server: MCPServer) -> None:
+    """Serve the handshake-based protocol used by current coding-agent hosts."""
+    lowlevel = server._lowlevel_server
+    async with stdio_server() as (read_stream, write_stream):
+        async with lowlevel.lifespan(lowlevel) as lifespan_context:
+            await serve_loop(
+                lowlevel,
+                read_stream,
+                write_stream,
+                lifespan_state=lifespan_context,
+                init_options=lowlevel.create_initialization_options(),
+            )
+
+
 def main() -> None:
     try:
         registry = AgentRegistry(load_registry(resolve_config_path()))
@@ -235,7 +252,7 @@ def main() -> None:
         raise SystemExit(1) from exc
 
     activity = build_activity_log()
-    build_server(registry, activity).run(transport="stdio")
+    anyio.run(run_legacy_stdio, build_server(registry, activity))
 
 
 if __name__ == "__main__":
